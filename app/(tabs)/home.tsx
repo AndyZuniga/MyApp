@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-//import { View, TextInput, Button, FlatList, Image, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Animated } from 'react-native';
 import { View, TextInput, Button, FlatList, Image, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
  // ✅ Agregado SafeAreaView
 
@@ -35,6 +36,12 @@ const HomeScreen = () => {
   const [selectedSetId, setSelectedSetId] = useState<string>('');
   const [allSets, setAllSets] = useState<Set[]>([]);
   const cache = useRef<Record<string, Card[]>>({});  // Cache para evitar peticiones repetidas
+  const pokeballIcon = require('../../assets/images/pokeballhome.png');
+  const [notificationCount, setNotificationCount] = useState(3); // o lo que sea dinámico
+  const bounceAnim = useRef(new Animated.Value(1)).current;
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+
 
   useEffect(() => {
     const fetchSets = async () => {
@@ -47,6 +54,7 @@ const HomeScreen = () => {
         console.error('Error fetching sets:', error);
       }
     };
+    
 
     fetchSets();
   }, []);
@@ -165,6 +173,51 @@ const HomeScreen = () => {
         numColumns={2}
         contentContainerStyle={styles.cardList}
       />
+      <View style={styles.bottomBar}>
+  <TouchableOpacity>
+  <View style={styles.iconWithBadge}>
+  <Ionicons name="notifications-outline" size={28} color="#555" />
+  {notificationCount > 0 && (
+    <Animated.View style={[styles.badge, { transform: [{ scale: bounceAnim }] }]}>
+      <Text style={styles.badgeText}>{notificationCount}</Text>
+    </Animated.View>
+  )}
+</View>
+  </TouchableOpacity>
+  <TouchableOpacity>
+  <Ionicons name="people-outline" size={28} color="#555" />
+  <View style={styles.badge}>
+    <Text style={styles.badgeText}>5</Text>
+  </View>
+  </TouchableOpacity>
+
+  <View style={styles.circleButton}>
+  <Image source={pokeballIcon} style={styles.pokeballIcon} />
+</View>
+
+
+<View style={{ position: 'relative' }}>
+  <TouchableOpacity onPress={() => setShowUserMenu(!showUserMenu)}>
+    <Ionicons name="person-circle-outline" size={28} color="#555" />
+  </TouchableOpacity>
+
+  {showUserMenu && (
+    <View style={styles.userMenu}>
+      <Text style={styles.userInfo}>Apodo: markiño</Text>
+      <Text style={styles.userInfo}>Nombre: Marco</Text>
+      <Text style={styles.userInfo}>Apellido: Pérez</Text>
+
+      <TouchableOpacity style={styles.logoutButton} onPress={() => {/* cerrar sesión aquí */}}>
+        <Ionicons name="log-out-outline" size={20} color="white" />
+        <Text style={styles.logoutText}>Cerrar sesión</Text>
+      </TouchableOpacity>
+    </View>
+  )}
+</View>
+
+
+
+</View>
     </SafeAreaView>
   );
 };
@@ -255,7 +308,112 @@ const styles = StyleSheet.create({
   cardText: {
     textAlign: 'center',
     fontSize: 12,
-  }
-});
+  },
 
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderColor: '#ccc',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+    zIndex: 10,
+  },
+  icon: {
+    fontSize: 24,
+  },
+  circleButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#b28dff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 30, // Para que sobresalga un poco de la barra
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  circleText: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  pokeballIcon: {
+    width: 96,
+    height: 96,
+    resizeMode: 'contain',
+  },
+  iconWithBadge: {
+    position: 'relative',
+    padding: 4,
+  },
+  
+  badge: {
+    position: 'absolute',
+    right: -2,
+    top: -2,
+    backgroundColor: 'red',
+    borderRadius: 10,
+    width: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+
+  userMenu: {
+    position: 'absolute',
+    top: 35,
+    right: 0,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    zIndex: 100,
+    width: 200,
+  },
+  
+  userInfo: {
+    fontSize: 14,
+    marginBottom: 6,
+    color: '#333',
+  },
+  
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    backgroundColor: '#d9534f',
+    padding: 8,
+    borderRadius: 6,
+    justifyContent: 'center',
+  },
+  
+  logoutText: {
+    color: 'white',
+    marginLeft: 6,
+    fontWeight: 'bold',
+  },
+  
+  
+});
 export default HomeScreen;

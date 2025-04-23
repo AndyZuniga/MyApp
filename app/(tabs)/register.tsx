@@ -13,8 +13,8 @@ import {
   Alert,
   Modal,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: importar Ionicons para mostrar/ocultar contraseña
 import { useRouter } from 'expo-router';
-
 const { width } = Dimensions.get('window');
 
 export default function RegisterScreen() {
@@ -28,6 +28,7 @@ export default function RegisterScreen() {
   const [apodo, setApodo] = useState('');
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // 🔴 CAMBIO: estado para mostrar/ocultar contraseña
   const [cargando, setCargando] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -79,8 +80,8 @@ export default function RegisterScreen() {
       }
 
       setModalVisible(true);
-    } catch (error) {
-      Alert.alert('Error de red', 'No se pudo conectar con el servidor');
+    } catch (error: any) {
+      Alert.alert('Error de red', error.message);
     } finally {
       setCargando(false);
     }
@@ -89,11 +90,12 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled">
-
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Registrarse</Text>
 
         <TextInput
@@ -142,17 +144,30 @@ export default function RegisterScreen() {
           <Text style={styles.errorText}>{errorCorreo}</Text>
         )}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña"
-          placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
-          secureTextEntry
-          value={password}
-          onChangeText={(text) => {
-            setPassword(text);
-            if (errorPassword) setErrorPassword(''); // 🔴 Limpiar error automáticamente
-          }}
-        />
+        {/* 🔴 CAMBIO: Input de contraseña con ojo para mostrar/ocultar */}
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Contraseña"
+            placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (errorPassword) setErrorPassword(''); // 🔴 Limpiar error automáticamente
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword((v) => !v)}
+            style={styles.eyeButton}
+          >
+            <Ionicons
+              name={showPassword ? 'eye' : 'eye-off'}
+              size={24}
+              color={isDarkMode ? '#fff' : '#000'}
+            />
+          </TouchableOpacity>
+        </View>
         {errorPassword !== '' && (
           <Text style={styles.errorText}>{errorPassword}</Text>
         )}
@@ -160,7 +175,8 @@ export default function RegisterScreen() {
         <TouchableOpacity
           style={styles.loginButton}
           onPress={registrarUsuario}
-          disabled={cargando}>
+          disabled={cargando}
+        >
           <Text style={styles.loginText}>
             {cargando ? 'Registrando...' : 'Registrarse'}
           </Text>
@@ -170,23 +186,22 @@ export default function RegisterScreen() {
         <Modal
           visible={modalVisible}
           animationType="slide"
-          transparent>
+          transparent
+        >
           <View style={styles.modalContainer}>
             <View style={styles.modalBox}>
-              <Text style={styles.modalText}>
-                Se ha enviado un enlace de verificación a:
-              </Text>
+              <Text style={styles.modalText}>Se ha enviado un enlace de verificación a:</Text>
               <Text style={styles.modalEmail}>{correo}</Text>
 
               <TouchableOpacity
                 style={styles.modalButton}
-                onPress={() => setModalVisible(false)}>
+                onPress={() => setModalVisible(false)}
+              >
                 <Text style={styles.loginText}>Cambiar correo</Text>
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -217,6 +232,27 @@ const getStyles = (isDarkMode: boolean) =>
       padding: 12,
       marginBottom: 16,
       fontSize: 16,
+    },
+    // 🔴 estilos para contenedor de contraseña en register
+    passwordContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      width: '100%',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#ccc',
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#fff',
+      borderRadius: 6,
+      marginBottom: 16,
+      paddingHorizontal: 12,
+    },
+    passwordInput: {
+      flex: 1,
+      paddingVertical: 12,
+      color: isDarkMode ? '#fff' : '#000',
+      fontSize: 16,
+    },
+    eyeButton: {
+      padding: 4,
     },
     loginButton: {
       width: '100%',

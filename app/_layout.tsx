@@ -5,10 +5,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import LinkingHandler from '../components/LinkingHandler'; // 🔴 Se importa el handler de deep links
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+// 🔴 Impedir auto-hide del splash hasta cargar assets
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -19,19 +20,22 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync(); // 🔴 Ocultar splash al cargar fuentes
     }
   }, [loaded]);
 
   if (!loaded) {
-    return null;
+    return null; // 🔴 Mantener splash hasta que carguen fuentes
   }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      {/* 🔴 Único LinkingHandler fuera del Stack para capturar deep links */}
+      <LinkingHandler />   
       <Stack>
+        {/* 📌 Pantallas definidas en rutas */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+        <Stack.Screen name="+not-found" /> {/* 🔴 CAMBIO: corregido syntax con equals y comillas */}
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

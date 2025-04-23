@@ -13,6 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: importar Ionicons para icono de ojo
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +27,7 @@ export default function LoginScreen() {
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // 🔴 CAMBIO: estado para mostrar/ocultar contraseña
 
   // 🟢 Función que llama a tu API
   const iniciarSesion = async () => {
@@ -84,18 +86,34 @@ export default function LoginScreen() {
           onChangeText={setCorreo}
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contraseña"
-          placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
-          secureTextEntry
-          value={password} // 🟣 Enlazado al estado
-          onChangeText={setPassword}
-        />
-
-        <View style={styles.forgotContainer}>
-          <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+        {/* 🔴 CAMBIO: Container para input de contraseña + icono de ojo */}
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Contraseña"
+            placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
+            secureTextEntry={!showPassword} // 🔴 toggleeando secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword(prev => !prev)}
+            style={styles.eyeButton}
+          >
+            <Ionicons
+              name={showPassword ? 'eye' : 'eye-off'} // 🔴 icono abierto/cerrado
+              size={24}
+              color={isDarkMode ? '#fff' : '#000'}
+            />
+          </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={styles.forgotContainer}
+          onPress={() => router.push('/forgot-password')}
+        >
+          <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.loginButton}
@@ -141,6 +159,27 @@ const getStyles = (isDarkMode: boolean) =>
       padding: 12,
       marginBottom: 16,
       fontSize: 16,
+    },
+    // 🔴 CAMBIO: estilos para contenedor de contraseña
+    passwordContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      width: '100%',
+      borderWidth: 1,
+      borderColor: isDarkMode ? '#333' : '#ccc',
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#fff',
+      borderRadius: 6,
+      marginBottom: 16,
+      paddingHorizontal: 12,
+    },
+    passwordInput: {
+      flex: 1,
+      paddingVertical: 12,
+      color: isDarkMode ? '#fff' : '#000',
+      fontSize: 16,
+    },
+    eyeButton: {
+      padding: 4,
     },
     forgotContainer: {
       width: '100%',

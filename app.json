@@ -2,7 +2,7 @@
   "expo": {
     "name": "SetMatch",
     "slug": "SetMatch",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "setmatch",
@@ -14,9 +14,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.myapp.verificacion"
+
     },
     "android": {
       "package": "com.setmatch.app",
+      "versionCode": 3,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -25,10 +27,26 @@
             "host": "myappserve-go.onrender.com",
             "pathPrefix": "/verificar"
           },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": {
+            
+            "scheme": "https",
+            "host": "myappserve-go.onrender.com",
+            "pathPrefix": "/reset-redirect"
+          },
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": {
+            
+            "scheme": "setmatch",
+            "host": "restablecer"
+          },
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
       "adaptiveIcon": {
@@ -57,12 +75,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "router": {
-        "origin": false
-      },
-      "eas": {
-        "projectId": "af270de2-ba8a-432c-b736-3bc0dde2db54"
-      }
+      "router": { "origin": false },
+      "eas": { "projectId": "af270de2-ba8a-432c-b736-3bc0dde2db54" }
     },
     "owner": "andyzunigaw"
   }

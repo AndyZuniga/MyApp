@@ -1,15 +1,16 @@
+// File: app/_layout.tsx
+
+import React, { useEffect } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
 import 'react-native-reanimated';
-import LinkingHandler from '../components/LinkingHandler'; // 🔴 Se importa el handler de deep links
-
+import LinkingHandler from '../components/LinkingHandler'; // 🔴 handler de deep links
 import { useColorScheme } from '@/hooks/useColorScheme';
 
-// 🔴 Impedir auto-hide del splash hasta cargar assets
+// 🔴 Evita que el splash se oculte antes de cargar fuentes
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -20,23 +21,25 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (loaded) {
-      SplashScreen.hideAsync(); // 🔴 Ocultar splash al cargar fuentes
+      SplashScreen.hideAsync(); // 🔴 ocultar splash tras cargar
     }
   }, [loaded]);
 
   if (!loaded) {
-    return null; // 🔴 Mantener splash hasta que carguen fuentes
+    return null; // 🔴 mantén splash hasta que carguen las fuentes
   }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      {/* 🔴 Único LinkingHandler fuera del Stack para capturar deep links */}
-      <LinkingHandler />   
-      <Stack>
-        {/* 📌 Pantallas definidas en rutas */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" /> {/* 🔴 CAMBIO: corregido syntax con equals y comillas */}
+      <LinkingHandler />  
+
+      {/* 🔴 APLICAR screenOptions A TODO el Stack para ocultar cabeceras */}
+      <Stack screenOptions={{ headerShown: false }}>
+        {/* ahora ya no se mostrará "(tabs)/home" ni ningún título de cabecera */}
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="+not-found" />
       </Stack>
+
       <StatusBar style="auto" />
     </ThemeProvider>
   );

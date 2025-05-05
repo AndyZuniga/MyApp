@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,9 @@ import {
   useColorScheme,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔴 CAMBIO: importar AsyncStorage
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: importar Ionicons para icono de ojo
+import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: iconos de ojo
 
 const { width } = Dimensions.get('window');
 
@@ -23,13 +24,30 @@ export default function LoginScreen() {
   const isDarkMode = colorScheme === 'dark';
   const styles = getStyles(isDarkMode);
 
-  // 🟣 Estado para los campos y mensajes
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
-  const [showPassword, setShowPassword] = useState(false); // 🔴 CAMBIO: estado para mostrar/ocultar contraseña
+  const [showPassword, setShowPassword] = useState(false);
 
-  // 🟢 Función que llama a tu API
+  // 🔴 CAMBIO: al montar, comprueba si hay sesión guardada
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('user');
+        if (stored !== null) {
+          // 🔴 CAMBIO: navegar directo a Home pasando usuario almacenado
+          router.replace({
+            pathname: '/home',
+            params: { usuario: stored },
+          });
+        }
+      } catch (e) {
+        console.error('Error leyendo sesión:', e);
+      }
+    };
+    checkSession();
+  }, []);
+
   const iniciarSesion = async () => {
     if (!correo || !password) {
       Alert.alert('Error', 'Por favor, completa todos los campos.');
@@ -40,25 +58,22 @@ export default function LoginScreen() {
       setCargando(true);
       const response = await fetch('https://myappserve-go.onrender.com/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ correo, password })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correo, password }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || 'Error al iniciar sesión');
       }
 
-      // 🔒 Aquí podrías guardar datos del usuario en contexto o asyncStorage
-      console.log('Usuario:', data.usuario);
+      // 🔴 CAMBIO: guardar sesión en AsyncStorage
+      await AsyncStorage.setItem('user', JSON.stringify(data.usuario));
 
-      // 🔁 Redirige al home o pantalla principal
-      Alert.alert('Bienvenido', `Hola, ${data.usuario.apodo}`);
-      router.replace('/home'); // Asegúrate de tener esa ruta
-
+      // 🔴 CAMBIO: navegar a Home pasando el usuario completo
+      router.replace({
+        pathname: '/home',
+        params: { usuario: JSON.stringify(data.usuario) },
+      });
     } catch (error: any) {
       Alert.alert('Error de inicio de sesión', error.message);
     } finally {
@@ -82,26 +97,25 @@ export default function LoginScreen() {
           placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
           keyboardType="email-address"
           autoCapitalize="none"
-          value={correo} // 🟣 Enlazado al estado
+          value={correo}
           onChangeText={setCorreo}
         />
 
-        {/* 🔴 CAMBIO: Container para input de contraseña + icono de ojo */}
+        {/* 🔴 CAMBIO: contenedor de contraseña con ojo */}
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
             placeholder="Contraseña"
             placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
-            secureTextEntry={!showPassword} // 🔴 toggleeando secureTextEntry
+            secureTextEntry={!showPassword}
             value={password}
             onChangeText={setPassword}
           />
           <TouchableOpacity
             onPress={() => setShowPassword(prev => !prev)}
-            style={styles.eyeButton}
-          >
+            style={styles.eyeButton}>
             <Ionicons
-              name={showPassword ? 'eye' : 'eye-off'} // 🔴 icono abierto/cerrado
+              name={showPassword ? 'eye' : 'eye-off'}
               size={24}
               color={isDarkMode ? '#fff' : '#000'}
             />
@@ -110,8 +124,7 @@ export default function LoginScreen() {
 
         <TouchableOpacity
           style={styles.forgotContainer}
-          onPress={() => router.push('/forgot-password')}
-        >
+          onPress={() => router.push('/forgot-password')}>
           <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
         </TouchableOpacity>
 
@@ -160,7 +173,6 @@ const getStyles = (isDarkMode: boolean) =>
       marginBottom: 16,
       fontSize: 16,
     },
-    // 🔴 CAMBIO: estilos para contenedor de contraseña
     passwordContainer: {
       flexDirection: 'row',
       alignItems: 'center',

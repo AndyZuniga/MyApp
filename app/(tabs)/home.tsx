@@ -1,419 +1,295 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  useColorScheme,
+  Alert,
+  Image,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔴 para logout
 import { Ionicons } from '@expo/vector-icons';
-import { Animated } from 'react-native';
-import { View, TextInput, Button, FlatList, Image, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
- // ✅ Agregado SafeAreaView
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
-// Tipos para las cartas y sets
-interface Card {
-  id: string;
-  name: string;
-  rarity: string;
-  types?: string[];
-  supertype: string;
-  set: {
-    id: string;
-    name: string;
-    logo: string;
-  };
-  images: {
-    small: string;
-  };
-}
+export default function HomeScreen() {
+  const router = useRouter();
+  const { usuario } = useLocalSearchParams<{ usuario: string }>();
+  const userObj = usuario ? JSON.parse(usuario) : null;
 
-interface Set {
-  id: string;
-  name: string;
-  images: {
-    logo: string;
-  };
-}
+  const isDarkMode = useColorScheme() === 'dark';
+  const styles = getStyles(isDarkMode);
 
-const HomeScreen = () => {
-  const [searchText, setSearchText] = useState('');
-  const [cards, setCards] = useState<Card[]>([]);
-  const [sets, setSets] = useState<Set[]>([]);
-  const [selectedSetId, setSelectedSetId] = useState<string>('');
-  const [allSets, setAllSets] = useState<Set[]>([]);
-  const cache = useRef<Record<string, Card[]>>({});  // Cache para evitar peticiones repetidas
-  const pokeballIcon = require('../../assets/images/pokeballhome.png');
-  const [notificationCount, setNotificationCount] = useState(3); // o lo que sea dinámico
-  const bounceAnim = useRef(new Animated.Value(1)).current;
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  // 🔴 estados de búsqueda y filtros
+  const [searchTerm, setSearchTerm]             = useState('');
+  const [cards, setCards]                       = useState<any[]>([]);
+  const [loading, setLoading]                   = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSet, setSelectedSet]           = useState<string | null>(null);
+  const [selectedType, setSelectedType]         = useState<string | null>(null);
 
+  // 🔴 opciones de categoría (+ Estadio agregado)
+  const categoryOptions = [
+    { label: 'Objeto',     value: 'Item'    },
+    { label: 'Entrenador', value: 'Trainer' },
+    { label: 'Herramienta',value: "Pokémon Tool"    },
+    { label: 'Estadio',    value: 'Stadium' }, // 🔴 nuevo filtro Estadio
+  ];
 
-
+  // 🔴 carga de sets desde API
+  const [sets, setSets] = useState<any[]>([]);
   useEffect(() => {
-    const fetchSets = async () => {
+    (async () => {
       try {
-        const response = await fetch('https://api.pokemontcg.io/v2/sets');
-        const data = await response.json();
-        setSets(data.data);
-        setAllSets(data.data);
-      } catch (error) {
-        console.error('Error fetching sets:', error);
+        const resp = await fetch('https://api.pokemontcg.io/v2/sets');
+        const json = await resp.json();
+        setSets(json.data || []);
+      } catch (e) {
+        console.error('Error al cargar sets:', e);
       }
-    };
-    
-
-    fetchSets();
+    })();
   }, []);
 
-  const buildQueryKey = () => `${searchText}|${selectedSetId}`;
+  // 🔴 definición estática de tipos de energía
+  const energyTypes = [
+    { type: 'Water',     icon: require('@/assets/images/energies/Energía_agua.png') },
+    { type: 'Fire',      icon: require('@/assets/images/energies/Energía_fuego.png') },
+    { type: 'Fairy',     icon: require('@/assets/images/energies/Energía_hada.png') },
+    { type: 'Colorless', icon: require('@/assets/images/energies/Energía_incolora.png') },
+    { type: 'Fighting',  icon: require('@/assets/images/energies/Energía_lucha.png') },
+    { type: 'Metal',     icon: require('@/assets/images/energies/Energía_metálica.png') },
+    { type: 'Darkness',  icon: require('@/assets/images/energies/Energía_oscura.png') },
+    { type: 'Grass',     icon: require('@/assets/images/energies/Energía_planta.png') },
+    { type: 'Psychic',   icon: require('@/assets/images/energies/Energía_psíquica.png') },
+    { type: 'Lightning', icon: require('@/assets/images/energies/Energía_rayo.png') },
+  ];
 
-  const fetchCards = async () => {
+  // limpiar filtros y resultados si la búsqueda queda en blanco
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setSelectedCategory(null);
+      setSelectedType(null);
+      setCards([]);
+    }
+  }, [searchTerm]);
+
+  // cargar todas las cartas de un set cuando no hay término de búsqueda
+  useEffect(() => {
+    if (!searchTerm.trim() && selectedSet) {
+      setLoading(true);
+      fetch(`https://api.pokemontcg.io/v2/cards?q=set.id:${selectedSet}`)
+        .then(res => res.json())
+        .then(json => setCards(json.data || []))
+        .catch(err => console.error('Error fetching set cards:', err))
+        .finally(() => setLoading(false));
+    }
+    if (!searchTerm.trim() && !selectedSet) {
+      setCards([]);
+    }
+  }, [selectedSet]);
+
+  // 🔴 NUEVO: manejar siempre la categoría, independientemente de searchTerm
+  useEffect(() => {
+    if (selectedCategory) {
+      setLoading(true);
+      let query = '';
+      if (selectedCategory === 'Trainer') {
+        query = 'supertype:Trainer';
+      } else {
+        // Item, Tool, Stadium: subtypes bajo Trainer
+        query = `supertype:Trainer subtypes:${selectedCategory}`;
+      }
+      fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}`)
+        .then(res => res.json())
+        .then(json => setCards(json.data || []))
+        .catch(err => console.error('Error fetching category cards:', err))
+        .finally(() => setLoading(false));
+
+      // 🔴 limpiar otros filtros
+      setSelectedSet(null);
+      setSelectedType(null);
+      // 🔴 limpiar búsqueda al aplicar categoría
+      setSearchTerm('');
+    } else if (!searchTerm.trim()) {
+      // si deselecciona categoría y no hay búsqueda, limpiar resultados
+      setCards([]);
+    }
+  }, [selectedCategory]);
+
+  // búsqueda de cartas por nombre
+  const buscarCarta = async () => {
+    if (!searchTerm.trim()) {
+      setSelectedCategory(null);
+      setSelectedSet(null);
+      setSelectedType(null);
+      setCards([]);
+      return;
+    }
+    setLoading(true);
     try {
-      const queryKey = buildQueryKey();
-
-      if (cache.current[queryKey]) {
-        setCards(cache.current[queryKey]);
-      } else {
-        let query = '';
-        const searchTextFormatted = searchText.replace(/ /g, '-');
-        if (searchTextFormatted) query += `name:\"${searchTextFormatted}\"`;
-        if (selectedSetId) {
-          if (query) query += ' AND ';
-          query += `set.id:\"${selectedSetId}\"`;
-        }
-
-        const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        setCards(data.data);
-        cache.current[queryKey] = data.data;
-      }
-
-      // Actualiza los sets mostrados según la búsqueda
-      if (searchText) {
-        if (selectedSetId) {
-          const selectedSet = allSets.find(set => set.id === selectedSetId);
-          setSets(selectedSet ? [selectedSet] : []);
-        } else {
-          const filteredSetIds = [...new Set(cache.current[queryKey].map(card => card.set.id))];
-          const filteredSets = allSets.filter(set => filteredSetIds.includes(set.id));
-          setSets(filteredSets);
-        }
-      } else {
-        setSets(allSets);
-      }
-    } catch (error) {
-      console.error(error);
+      const q = encodeURIComponent(`name:${searchTerm}`);
+      const resp = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}`);
+      const json = await resp.json();
+      setCards(json.data || []);
+      setSelectedSet(null);
+      setSelectedType(null);
+      setSelectedCategory(null);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo obtener las cartas.');
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (searchText || selectedSetId) {
-      fetchCards();
-    } else {
-      setCards([]);
-      setSets(allSets);
-    }
-  }, [selectedSetId]);
+  // logout y menú usuario
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('user');
+    router.replace('/login');
+  };
+  const showOptions = () => {
+    Alert.alert('Opciones', undefined, [
+      { text: 'Mis datos', onPress: () => {
+          if (userObj) {
+            Alert.alert(
+              'Datos de usuario',
+              `Apodo: ${userObj.apodo}\nCorreo: ${userObj.correo}\nNombre: ${userObj.nombre}\nID: ${userObj.id}`
+            );
+          } else Alert.alert('Usuario no disponible');
+        }
+      },
+      { text: 'Cerrar Sesión', style: 'destructive', onPress: handleLogout },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
 
-  const renderCard = ({ item }: { item: Card }) => (
-    <View style={styles.cardContainer}>
-      <Image source={{ uri: item.images.small }} style={styles.cardImage} />
-      <Text style={styles.cardName}>{item.name}</Text>
-      <Text style={styles.cardText}>Set: {item.set.name}</Text>
-      <Text style={styles.cardText}>Rareza: {item.rarity}</Text>
-      <Text style={styles.cardText}>Tipo: {item.types?.join(', ')}</Text>
-      <Text style={styles.cardText}>Supertipo: {item.supertype}</Text>
-    </View>
-  );
+  // filtros dinámicos según resultados
+  const availableSets = !searchTerm.trim()
+    ? sets
+    : sets.filter(s => cards.some(c => c.set?.id === s.id));
+  const availableTypes = !searchTerm.trim()
+    ? energyTypes
+    : energyTypes.filter(et =>
+        cards.some(c => Array.isArray(c.types) && c.types.includes(et.type))
+      );
 
-  const renderSetCarousel = () => (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.carousel}>
-      {sets.map((set) => {
-        const isSelected = selectedSetId === set.id;
-        return (
-          <TouchableOpacity
-            key={set.id}
-            style={[styles.setItem, isSelected && styles.selectedSet]}
-            onPress={() => {
-              const newSetId = selectedSetId === set.id ? '' : set.id;
-              setSelectedSetId(newSetId);
-
-              // Restaurar sets si se desmarca un set específico
-              if (newSetId === '' && searchText) {
-                const queryKey = `${searchText}|`;
-                const cardsInSearch = cache.current[queryKey] || cards;
-                const filteredSetIds = [...new Set(cardsInSearch.map(card => card.set.id))];
-                const filteredSets = allSets.filter(set => filteredSetIds.includes(set.id));
-                setSets(filteredSets);
-              }
-            }}
-          >
-            <View style={styles.setFixedSize}> {/* ✅ Caja con tamaño fijo */}
-              <Image source={{ uri: set.images.logo }} style={styles.setLogo} />
-              <Text style={[styles.setName, isSelected && styles.selectedSetText]}>{set.name}</Text>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
+  // aplicar filtros finales sobre cards
+  const filteredCards = cards
+    .filter(c =>
+      !selectedCategory
+        ? true
+        : selectedCategory === 'Trainer'
+        ? c.supertype === 'Trainer'
+        : Array.isArray(c.subtypes) && c.subtypes.includes(selectedCategory)
+    )
+    .filter(c => (!selectedSet ? true : c.set?.id === selectedSet))
+    .filter(c =>
+      !selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)
+    );
 
   return (
-    <SafeAreaView style={styles.container}> {/* ✅ Evita que el input quede debajo del notch */}
-      <TextInput
-        placeholder="Buscar carta por nombre"
-        value={searchText}
-        onChangeText={setSearchText}
-        onSubmitEditing={fetchCards}
-        style={styles.input}
-      />
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
+        {/* filtro categoría */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFilterContainer}>
+          {categoryOptions.map(opt => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.categoryButton, selectedCategory === opt.value && styles.categoryButtonSelected]}
+              onPress={() => setSelectedCategory(prev => (prev === opt.value ? null : opt.value))}
+            >
+              <Text style={[styles.categoryLabel, { color: isDarkMode ? '#fff' : '#000' }]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-      {renderSetCarousel()}
+        {/* filtro sets */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.setFilterContainer}>
+          {availableSets.map(set => (
+            <TouchableOpacity
+              key={set.id}
+              style={[styles.setButton, selectedSet === set.id && styles.setButtonSelected]}
+              onPress={() => setSelectedSet(prev => (prev === set.id ? null : set.id))}
+            >
+              <Image source={{ uri: set.images.logo }} style={styles.setIcon} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-      <Button title="Buscar" onPress={fetchCards} />
+        {/* filtro tipos */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeFilterContainer}>
+          {availableTypes.map(({ type, icon }) => (
+            <TouchableOpacity
+              key={type}
+              style={[styles.typeButton, selectedType === type && styles.typeButtonSelected]}
+              onPress={() => setSelectedType(prev => (prev === type ? null : type))}
+            >
+              <Image source={icon} style={styles.typeIcon} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-      <FlatList
-        data={cards}
-        keyExtractor={(item) => item.id}
-        renderItem={renderCard}
-        numColumns={2}
-        contentContainerStyle={styles.cardList}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Nombre de la carta"
+          placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+        />
+        <TouchableOpacity style={styles.loginButton} onPress={buscarCarta} disabled={loading}>
+          <Text style={styles.loginText}>{loading ? 'Buscando...' : 'Buscar'}</Text>
+        </TouchableOpacity>
+
+        {filteredCards.map(card => (
+          <View key={card.id} style={styles.cardBox}>
+            <Image source={{ uri: card.images.small }} style={styles.cardImage} />
+            <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
+              {card.name}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* barra inferior */}
       <View style={styles.bottomBar}>
-  <TouchableOpacity>
-  <View style={styles.iconWithBadge}>
-  <Ionicons name="notifications-outline" size={28} color="#555" />
-  {notificationCount > 0 && (
-    <Animated.View style={[styles.badge, { transform: [{ scale: bounceAnim }] }]}>
-      <Text style={styles.badgeText}>{notificationCount}</Text>
-    </Animated.View>
-  )}
-</View>
-  </TouchableOpacity>
-  <TouchableOpacity>
-  <Ionicons name="people-outline" size={28} color="#555" />
-  <View style={styles.badge}>
-    <Text style={styles.badgeText}>5</Text>
-  </View>
-  </TouchableOpacity>
-
-  <View style={styles.circleButton}>
-  <Image source={pokeballIcon} style={styles.pokeballIcon} />
-</View>
-
-
-<View style={{ position: 'relative' }}>
-  <TouchableOpacity onPress={() => setShowUserMenu(!showUserMenu)}>
-    <Ionicons name="person-circle-outline" size={28} color="#555" />
-  </TouchableOpacity>
-
-  {showUserMenu && (
-    <View style={styles.userMenu}>
-      <Text style={styles.userInfo}>Apodo: markiño</Text>
-      <Text style={styles.userInfo}>Nombre: Marco</Text>
-      <Text style={styles.userInfo}>Apellido: Pérez</Text>
-
-      <TouchableOpacity style={styles.logoutButton} onPress={() => {/* cerrar sesión aquí */}}>
-        <Ionicons name="log-out-outline" size={20} color="white" />
-        <Text style={styles.logoutText}>Cerrar sesión</Text>
-      </TouchableOpacity>
+        <View style={styles.iconButton} />
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/library')}>
+          <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={showOptions}>
+          <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+      </View>
     </View>
-  )}
-</View>
-
-
-
-</View>
-    </SafeAreaView>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 25 : 16, // ✅ respeta el notch
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 10,
-    marginVertical: 8,
-    borderRadius: 8,
-  },
-  carousel: {
-    height: 150,
-    maxHeight: 150,           // ✅ asegura que nunca se reduzca
-    minHeight: 150,           // ✅ asegura que nunca crezca
-    width: '100%',
-    marginVertical: 7,
-    borderWidth: 2,
-    borderColor: 'red',
-    borderRadius: 10,
-    paddingVertical: 4
-  },
-  setItem: {
-    alignItems: 'center',
-    marginHorizontal: 6,
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: '#eee',
-    height: '100%',        // ✅ mantiene altura consistente con el carruse
-  },
-  selectedSet: {
-    backgroundColor: '#b28dff',
-  },
-  selectedSetText: {
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  setFixedSize: {
-    width: 120,
-    height: 130,             // ✅ un poco más alto para nombres largos
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  setLogo: {
-    width: '80%',
-    height: 50,
-    resizeMode: 'contain',    // ✅ Mantiene proporciones
-  },
-  setName: {
-    fontSize: 11,
-    marginTop: 5,
-    textAlign: 'center',
-    flexWrap: 'wrap',
-    maxWidth: '100%',
-  },
-  cardList: {
-    paddingTop: 16,
-  },
-  cardContainer: {
-    flex: 1,
-    alignItems: 'center',
-    marginBottom: 16,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    marginHorizontal: 4,
-    backgroundColor: '#f9f9f9'
-  },
-  cardImage: {
-    width: 120,
-    height: 170,
-    resizeMode: 'contain',
-  },
-  cardName: {
-    marginTop: 8,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  cardText: {
-    textAlign: 'center',
-    fontSize: 12,
-  },
-
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderColor: '#ccc',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 30,
-    zIndex: 10,
-  },
-  icon: {
-    fontSize: 24,
-  },
-  circleButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#b28dff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 30, // Para que sobresalga un poco de la barra
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
-  },
-  circleText: {
-    color: 'white',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  pokeballIcon: {
-    width: 96,
-    height: 96,
-    resizeMode: 'contain',
-  },
-  iconWithBadge: {
-    position: 'relative',
-    padding: 4,
-  },
-  
-  badge: {
-    position: 'absolute',
-    right: -2,
-    top: -2,
-    backgroundColor: 'red',
-    borderRadius: 10,
-    width: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  
-  badgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-
-  userMenu: {
-    position: 'absolute',
-    top: 35,
-    right: 0,
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    zIndex: 100,
-    width: 200,
-  },
-  
-  userInfo: {
-    fontSize: 14,
-    marginBottom: 6,
-    color: '#333',
-  },
-  
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    backgroundColor: '#d9534f',
-    padding: 8,
-    borderRadius: 6,
-    justifyContent: 'center',
-  },
-  
-  logoutText: {
-    color: 'white',
-    marginLeft: 6,
-    fontWeight: 'bold',
-  },
-  
-  
-});
-export default HomeScreen;
+const getStyles = (isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: isDarkMode ? '#121212' : '#fff' },
+    searchContainer: { padding: 24, paddingTop: 40,paddingBottom: 100, alignItems: 'center' },
+    categoryFilterContainer: { marginBottom: 12, paddingHorizontal: 4 },
+    categoryButton: { marginHorizontal: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0' },
+    categoryButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    categoryLabel: { fontSize: 14, fontWeight: '500' },
+    setFilterContainer: { marginBottom: 12, paddingHorizontal: 4 },
+    setButton: { marginHorizontal: 6, padding: 4, borderRadius: 6, backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
+    setButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    setIcon: { width: 40, height: 40, resizeMode: 'contain' },
+    typeFilterContainer: { marginBottom: 16, paddingHorizontal: 4 },
+    typeButton: { alignItems: 'center', marginHorizontal: 8, padding: 4, borderRadius: 6, backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0' },
+    typeButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    typeIcon: { width: 25, height: 25, resizeMode: 'contain' },
+    input: { width: '100%', borderWidth: 1, borderColor: isDarkMode ? '#333' : '#ccc', backgroundColor: isDarkMode ? '#1e1e1e' : '#fff', color: isDarkMode ? '#fff' : '#000', borderRadius: 6, padding: 12, marginBottom: 16, fontSize: 16 },
+    loginButton: { width: '100%', backgroundColor: '#6A0DAD', paddingVertical: 14, borderRadius: 6, alignItems: 'center', marginBottom: 16 },
+    loginText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+    cardBox: { width: '100%', alignItems: 'center', padding: 12, marginBottom: 16, backgroundColor: isDarkMode ? '#1e1e1e' : '#f9f9f9', borderRadius: 6 },
+    cardImage: { width: '100%', height: 200, resizeMode: 'contain', borderRadius: 6, marginBottom: 8 },
+    cardName: { fontSize: 12, fontWeight: '500' },
+    bottomBar: { position: 'absolute', bottom: 0, width: '100%', height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, backgroundColor: isDarkMode ? '#1e1e1e' : '#fff', borderTopWidth: 1, borderTopColor: isDarkMode ? '#333' : '#ccc' },
+    iconButton: { padding: 8 },
+  });

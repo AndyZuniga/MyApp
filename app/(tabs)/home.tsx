@@ -1,15 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  useColorScheme,
-  Alert,
-  Image,
-} from 'react-native';
+import {View,Text,TextInput,ScrollView,TouchableOpacity,StyleSheet,useColorScheme,Alert,Image,} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔴 para logout
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -118,31 +108,45 @@ export default function HomeScreen() {
     }
   }, [selectedCategory]);
 
-  // búsqueda de cartas por nombre
-  const buscarCarta = async () => {
-    if (!searchTerm.trim()) {
-      setSelectedCategory(null);
-      setSelectedSet(null);
-      setSelectedType(null);
-      setCards([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const q = encodeURIComponent(`name:${searchTerm}`);
-      const resp = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}`);
-      const json = await resp.json();
-      setCards(json.data || []);
-      setSelectedSet(null);
-      setSelectedType(null);
-      setSelectedCategory(null);
-    } catch (e) {
-      Alert.alert('Error', 'No se pudo obtener las cartas.');
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+// búsqueda de cartas por nombre, cubriendo espacios, guiones y nada
+const buscarCarta = async () => {
+  const raw = searchTerm.trim();
+  if (!raw) {
+    setSelectedCategory(null);
+    setSelectedSet(null);
+    setSelectedType(null);
+    setCards([]);
+    return;
+  }
+  setLoading(true);
+  try {
+    // 🔴 Generamos 3 variantes:
+    const withSpaces  = raw;                       // "Charizard V Max"
+    const withHyphens = raw.replace(/\s+/g, '-');  // "Charizard-V-Max"
+    const noSpaces    = raw.replace(/\s+/g, '');   // "CharizardVMax"
+
+    // 🔴 Construimos un OR en la query para las 3 formas
+    const query = 
+      `name:"${withSpaces}" OR ` +
+      `name:"${withHyphens}" OR ` +
+      `name:"${noSpaces}"`;
+
+    const q = encodeURIComponent(query);
+    const resp = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}`);
+    const json = await resp.json();
+
+    setCards(json.data || []);
+    setSelectedSet(null);
+    setSelectedType(null);
+    setSelectedCategory(null);
+  } catch (e) {
+    Alert.alert('Error', 'No se pudo obtener las cartas.');
+    console.error(e);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // logout y menú usuario
   const handleLogout = async () => {
@@ -246,6 +250,22 @@ export default function HomeScreen() {
 
         {filteredCards.map(card => (
           <View key={card.id} style={styles.cardBox}>
+            {/* ── AÑADIDO: icono circular en la esquina superior derecha ── */}
+            +            {/* ── Botón “–” en esquina superior izquierda ── */}
+            <TouchableOpacity
+              style={styles.iconCircleLeft}
+             onPress={() => {
+                /* lógica al tocar “–” */
+              }}
+            >
+              <Ionicons name="remove" size={16} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+            style={styles.iconCircle}
+            onPress={() => {/* aquí tu lógica al tocar el icono */}}
+            >
+              <Ionicons name="add" size={16} color="#fff" />
+            </TouchableOpacity>
             <Image source={{ uri: card.images.small }} style={styles.cardImage} />
             <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
               {card.name}
@@ -292,4 +312,28 @@ const getStyles = (isDarkMode: boolean) =>
     cardName: { fontSize: 12, fontWeight: '500' },
     bottomBar: { position: 'absolute', bottom: 0, width: '100%', height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, backgroundColor: isDarkMode ? '#1e1e1e' : '#fff', borderTopWidth: 1, borderTopColor: isDarkMode ? '#333' : '#ccc' },
     iconButton: { padding: 8 },
+    iconCircle: {
+      position: 'absolute',      // para superponerlo sobre la tarjeta
+      top: 8,                    // separación del borde superior
+      right: 8,                  // separación del borde derecho
+      width: 32,                 // tamaño del círculo
+      height: 32,
+      borderRadius: 16,          // forma circular
+      backgroundColor: '#6A0DAD',// mismo morado de tus botones
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1,                 // para que siempre quede encima
+    },
+      iconCircleLeft: {
+          position: 'absolute',
+          top: 8,
+          left: 8,           // en lugar de right
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: '#6A0DAD',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1,
+        },
   });

@@ -55,6 +55,14 @@ export default function HomeScreen() {
     { type: 'Psychic',   icon: require('@/assets/images/energies/Energía_psíquica.png') },
     { type: 'Lightning', icon: require('@/assets/images/energies/Energía_rayo.png') },
   ];
+  useEffect(() => {
+  if (!userObj) return;
+  fetch(`https://myappserve-go.onrender.com/library?userId=${userObj.id}`)
+    .then(r => r.json())
+    .then(data => setLibrary(data.library))
+    .catch(console.error);
+}, [userObj]);
+
 
   // limpiar filtros y resultados si la búsqueda queda en blanco
   useEffect(() => {
@@ -192,6 +200,8 @@ const buscarCarta = async () => {
     .filter(c =>
       !selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)
     );
+  const [library, setLibrary] = useState<{cardId:string,quantity:number}[]>([]);
+
 
   return (
     <View style={styles.container}>
@@ -248,30 +258,70 @@ const buscarCarta = async () => {
           <Text style={styles.loginText}>{loading ? 'Buscando...' : 'Buscar'}</Text>
         </TouchableOpacity>
 
-        {filteredCards.map(card => (
-          <View key={card.id} style={styles.cardBox}>
-            {/* ── AÑADIDO: icono circular en la esquina superior derecha ── */}
-            +            {/* ── Botón “–” en esquina superior izquierda ── */}
-            <TouchableOpacity
-              style={styles.iconCircleLeft}
-             onPress={() => {
-                /* lógica al tocar “–” */
-              }}
-            >
-              <Ionicons name="remove" size={16} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-            style={styles.iconCircle}
-            onPress={() => {/* aquí tu lógica al tocar el icono */}}
-            >
-              <Ionicons name="add" size={16} color="#fff" />
-            </TouchableOpacity>
-            <Image source={{ uri: card.images.small }} style={styles.cardImage} />
-            <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
-              {card.name}
-            </Text>
-          </View>
-        ))}
+{filteredCards.map(card => {
+  const qty = library.find(e => e.cardId === card.id)?.quantity || 0;
+  return (
+    <View key={card.id} style={styles.cardBox}>
+      {qty > 0 && (
+        <View style={styles.counterBadge}>
+          <Text style={styles.counterText}>{qty}</Text>
+        </View>
+      )}
+
+      {/* – */}
+      <TouchableOpacity
+        style={styles.iconCircleLeft}
+        onPress={async () => {
+          try {
+            const res = await fetch('https://myappserve-go.onrender.com/library/remove', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: userObj.id, cardId: card.id })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setLibrary(data.library);
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
+        }}
+      >
+        <Ionicons name="remove" size={16} color="#fff" />
+      </TouchableOpacity>
+
+      {/* + */}
+      <TouchableOpacity
+        style={styles.iconCircle}
+        onPress={async () => {
+          try {
+            const res = await fetch('https://myappserve-go.onrender.com/library/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: userObj.id, cardId: card.id })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setLibrary(data.library);
+            Alert.alert(
+              'Añadido',
+              `Ahora tienes ${data.library.find((e: any) => e.cardId === card.id).quantity} de esta carta.`
+            );
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
+        }}
+      >
+        <Ionicons name="add" size={16} color="#fff" />
+      </TouchableOpacity>
+
+      <Image source={{ uri: card.images.small }} style={styles.cardImage} />
+      <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
+        {card.name}
+      </Text>
+    </View>
+  );
+})}
+
       </ScrollView>
 
       {/* barra inferior */}
@@ -336,4 +386,18 @@ const getStyles = (isDarkMode: boolean) =>
           alignItems: 'center',
           zIndex: 1,
         },
+        counterBadge: {
+  position: 'absolute',
+  top: 8,
+  right: 48,          // junto al botón “+”
+  backgroundColor: '#6A0DAD',
+  borderRadius: 8,
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+},
+counterText: {
+  color: '#fff',
+  fontSize: 12,
+  fontWeight: '600',
+},
   });

@@ -6,9 +6,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { usuario } = useLocalSearchParams<{ usuario: string }>();
-  const userObj = usuario ? JSON.parse(usuario) : null;
-
+  const [userObj, setUserObj] = useState<any>(null);
+  useEffect(() => {
+    AsyncStorage.getItem('user').then(data => {
+      if (data) setUserObj(JSON.parse(data));
+       });
+       }, []);
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
@@ -327,9 +330,15 @@ const buscarCarta = async () => {
       {/* barra inferior */}
       <View style={styles.bottomBar}>
         <View style={styles.iconButton} />
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/library')}>
+        <TouchableOpacity
+         style={styles.iconButton}
+         onPress={() =>
+          router.push({ pathname: '/library', params: { usuario: JSON.stringify(userObj) },
+          })
+          }
+          >
           <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
-        </TouchableOpacity>
+          </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={showOptions}>
           <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>

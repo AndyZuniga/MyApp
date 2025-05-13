@@ -173,8 +173,9 @@ Correo: ${userObj.correo}`) },
 
   return (
     <View style={styles.container}>
-      {/* Filtro Categoría */}
       <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
+        {/* Filtro Categoría */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFilterContainer}></ScrollView>
         {availableCategories.map(opt=> (
           <TouchableOpacity key={opt.value} style={[styles.catButton, selectedCategory===opt.value&&styles.catButtonSelected]} onPress={()=>setSelectedCategory(prev=>prev===opt.value?null:opt.value)}>
             <Text style={[styles.catLabel, {color:isDarkMode?'#fff':'#000'}]}>{opt.label}</Text>

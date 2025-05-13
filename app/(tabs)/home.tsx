@@ -329,16 +329,22 @@ const buscarCarta = async () => {
 
       {/* barra inferior */}
       <View style={styles.bottomBar}>
-        <View style={styles.iconButton} />
         <TouchableOpacity
-         style={styles.iconButton}
-         onPress={() =>
-          router.push({ pathname: '/library', params: { usuario: JSON.stringify(userObj) },
-          })
-          }
-          >
-          <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
-          </TouchableOpacity>
+  style={styles.iconButton}
+  onPress={() => {
+    if (!userObj) {
+      return Alert.alert('Usuario no disponible');
+    }
+    // Envolver el JSON en encodeURIComponent para que expo-router lo reciba bien
+    const usuarioParam = encodeURIComponent(JSON.stringify(userObj));
+    router.push({
+      pathname: '/library',
+      params: { usuario: usuarioParam }
+    });
+  }}
+>
+  <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
+</TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={showOptions}>
           <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>

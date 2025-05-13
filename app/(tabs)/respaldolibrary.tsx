@@ -27,7 +27,6 @@ export default function LibraryScreen() {
 
   // Filtros: categoría, set, tipo
   const categoryOptions = [
-    { label: 'Pokémon', value: 'Pokémon' },
     { label: 'Entrenador', value: 'Trainer' },
     { label: 'Objeto', value: 'Item' },
     { label: 'Herramienta', value: 'Pokémon Tool' },
@@ -44,11 +43,18 @@ export default function LibraryScreen() {
   // Mostrar Low/Trend
   const [showLowSum, setShowLowSum] = useState<boolean>(true);
 
+  // 🔴 definición estática de tipos de energía
   const energyTypes = [
-    { type: 'Water', icon: require('@/assets/images/energies/Energía_agua.png') },
-    { type: 'Fire', icon: require('@/assets/images/energies/Energía_fuego.png') },
-    { type: 'Grass', icon: require('@/assets/images/energies/Energía_planta.png') },
-    // ...otros tipos...
+    { type: 'Water',     icon: require('@/assets/images/energies/Energía_agua.png') },
+    { type: 'Fire',      icon: require('@/assets/images/energies/Energía_fuego.png') },
+    { type: 'Fairy',     icon: require('@/assets/images/energies/Energía_hada.png') },
+    { type: 'Colorless', icon: require('@/assets/images/energies/Energía_incolora.png') },
+    { type: 'Fighting',  icon: require('@/assets/images/energies/Energía_lucha.png') },
+    { type: 'Metal',     icon: require('@/assets/images/energies/Energía_metálica.png') },
+    { type: 'Darkness',  icon: require('@/assets/images/energies/Energía_oscura.png') },
+    { type: 'Grass',     icon: require('@/assets/images/energies/Energía_planta.png') },
+    { type: 'Psychic',   icon: require('@/assets/images/energies/Energía_psíquica.png') },
+    { type: 'Lightning', icon: require('@/assets/images/energies/Energía_rayo.png') },
   ];
 
   // Recuperar usuario
@@ -147,18 +153,12 @@ export default function LibraryScreen() {
     c.name.toLowerCase().includes(localSearch.toLowerCase())
   );
 
-  // Suma total Low/Trend en toda la biblioteca
-  const totalLow = cards.reduce(
-    (sum, c) => sum + (c.cardmarket?.prices?.lowPrice ?? 0) * c.quantity,
-    0
-  );
-  const totalTrend = cards.reduce(
-    (sum, c) => sum + (c.cardmarket?.prices?.trendPrice ?? 0) * c.quantity,
-    0
-  );
-const sumText = showLowSum
-  ? `Total Low: $${totalLow.toFixed(2)}`
-  : `Total Trend: $${totalTrend.toFixed(2)}`;
+  // Suma Low/Trend
+  const sumLow = localFiltered.reduce((s,c)=>s+(c.cardmarket?.prices?.lowPrice||0)*c.quantity,0);
+  const sumTrend = localFiltered.reduce((s,c)=>s+(c.cardmarket?.prices?.trendPrice||0)*c.quantity,0);
+  const sumText = showLowSum
+    ? `Total Low: $${sumLow.toFixed(2)}`
+    : `Total Trend: $${sumTrend.toFixed(2)}`;
 
   // Funciones de navegación y menú inferior
   const goHome = () => router.replace('/home');
@@ -174,7 +174,7 @@ Correo: ${userObj.correo}`) },
   return (
     <View style={styles.container}>
       {/* Filtro Categoría */}
-      <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
         {availableCategories.map(opt=> (
           <TouchableOpacity key={opt.value} style={[styles.catButton, selectedCategory===opt.value&&styles.catButtonSelected]} onPress={()=>setSelectedCategory(prev=>prev===opt.value?null:opt.value)}>
             <Text style={[styles.catLabel, {color:isDarkMode?'#fff':'#000'}]}>{opt.label}</Text>
@@ -229,8 +229,7 @@ Correo: ${userObj.correo}`) },
 
 const getStyles = (isDarkMode:boolean)=>StyleSheet.create({
   container:{flex:1,backgroundColor:isDarkMode?'#121212':'#fff'},
-  searchContainer: { padding: 24, paddingTop: 40,paddingBottom: 100, alignItems: 'center' },
-  filterContainer:{paddingHorizontal:4,marginVertical:80},
+  filterContainer:{paddingHorizontal:4,marginVertical:8},
   catButton:{marginHorizontal:6,paddingHorizontal:12,paddingVertical:6,borderRadius:6,backgroundColor:isDarkMode?'#1e1e1e':'#f0f0f0'},
   catButtonSelected:{borderWidth:2,borderColor:'#6A0DAD'},
   catLabel:{fontSize:14,fontWeight:'500'},

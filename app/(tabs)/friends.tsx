@@ -42,10 +42,7 @@ export default function FriendsScreen() {
   // Carga usuario y datos
   useEffect(() => {
     AsyncStorage.getItem('user')
-      .then(data => {
-        if (!data) return;
-        setUserObj(JSON.parse(data));
-      })
+      .then(data => { if (data) setUserObj(JSON.parse(data)); })
       .catch(err => console.error('[AsyncStorage] error:', err));
   }, []);
 
@@ -54,12 +51,12 @@ export default function FriendsScreen() {
     if (!userObj) return;
     setLoading(true);
     fetch(`${API_URL}/friends?userId=${userObj.id}`)
-      .then(res => (res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`)))
+      .then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
       .then(({ friends }) => setFriends(friends || []))
       .catch(err => { console.error('[friends/get]', err); setFriends([]); })
       .finally(() => setLoading(false));
     fetch(`${API_URL}/user-blocked?userId=${userObj.id}`)
-      .then(res => (res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`)))
+      .then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
       .then(({ blocked }) => setBlockedUsers(blocked || []))
       .catch(err => { console.error('[user-blocked]', err); setBlockedUsers([]); });
   }, [userObj]);
@@ -69,14 +66,11 @@ export default function FriendsScreen() {
   // Búsqueda local de usuarios (solo en modo amigos)
   const searchUsers = () => {
     const raw = searchTerm.trim();
-    if (!raw) {
-      setSearchResults([]);
-      return;
-    }
+    if (!raw) { setSearchResults([]); return; }
     setSearching(true);
     const tokens = raw.toLowerCase().split(/\s+/);
     fetch(`${API_URL}/users/all`)
-      .then(res => (res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`)))
+      .then(res => res.ok ? res.json() : Promise.reject(`HTTP ${res.status}`))
       .then(({ users }) => {
         const filtered = (users || []).filter(u => {
           const nombre = u.nombre.toLowerCase();
@@ -113,9 +107,7 @@ export default function FriendsScreen() {
   // Eliminar amigo
   const handleRemoveFriend = (friendId: string) => {
     fetch(`${API_URL}/friend-remove`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: userObj.id, friendId }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: userObj.id, friendId }),
     });
     setFriends(prev => prev.filter(f => f._id !== friendId));
     setDeleteModeUser(null);
@@ -132,9 +124,7 @@ export default function FriendsScreen() {
         { text: 'No', style: 'cancel' },
         { text: 'Sí', onPress: () => {
             fetch(`${API_URL}/user-block`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ blocker: userObj.id, blocked: user._id }),
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ blocker: userObj.id, blocked: user._id }),
             });
             setFriends(prev => prev.filter(f => f._id !== user._id));
             setBlockedUsers(prev => [...prev, user]);
@@ -144,7 +134,8 @@ export default function FriendsScreen() {
       ]
     );
   };
-    // Desbloquear usuario
+
+  // Desbloquear usuario
   const handleUnblockUser = (user: any) => {
     Alert.alert(
       'Desbloquear usuario',
@@ -180,11 +171,22 @@ export default function FriendsScreen() {
           const disabled = isFriend || isPending;
           const label = isFriend ? 'Amigo' : isPending ? 'Enviada' : 'Agregar';
           return (
-            <View key={user._id} style={styles.userBox}>
-              <Text style={[styles.userName, { color: isDarkMode ? '#fff' : '#000' }]}>  
-                {user.nombre} {user.apellido} (@{user.apodo})
-              </Text>
-              <View style={{ alignItems: 'flex-end' }}>
+            <TouchableOpacity
+              key={user._id}
+              style={styles.userBox}
+              onPress={() => {
+                if (!showBlocked && isFriend) {
+                  router.push({ pathname: '/friends-library', params: { friendId: user._id, friendName: `${user.nombre} ${user.apellido}` } });
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.userInfo}>
+                <Text style={[styles.userName, { color: isDarkMode ? '#fff' : '#000' }]}>  
+                  {user.nombre} {user.apellido} (@{user.apodo})
+                </Text>
+              </View>
+              <View style={styles.actions}>
                 {!showBlocked && (
                   <TouchableOpacity
                     style={[styles.friendButton, disabled ? styles.addedButton : styles.addButton]}
@@ -205,12 +207,12 @@ export default function FriendsScreen() {
                   </>
                 )}
                 {showBlocked && (
-                  <TouchableOpacity style={styles.friendButton} onPress={() => handleUnblockUser(user)}>
-                    <Text style={styles.friendButton}>Desbloquear</Text>
+                  <TouchableOpacity style={styles.unblockButton} onPress={() => handleUnblockUser(user)}>
+                    <Text style={styles.unblockText}>Desbloquear</Text>
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>

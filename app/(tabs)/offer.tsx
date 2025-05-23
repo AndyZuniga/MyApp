@@ -17,6 +17,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 // URL del backend
 const API_URL = 'https://myappserve-go.onrender.com';
 
+/**
+ * Tipo de entrada de carta en OfferScreen
+ */
 type CardEntry = {
   id: string;
   name: string;
@@ -41,14 +44,14 @@ export default function OfferScreen() {
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
-  // Inicializar contadores una sola vez
+  // Inicializar contadores con la cantidad máxima disponible
   useEffect(() => {
     const init: Record<string, number> = {};
     cards.forEach(c => { init[c.id] = c.quantity; });
     setCounts(init);
-  }, []);
+  }, [cards]);
 
-  // Cálculo de sumas
+  // Cálculo de sumas según modo
   const lowSum = cards
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
@@ -56,19 +59,19 @@ export default function OfferScreen() {
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.trendPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
 
-  // Actualizar oferta al cambiar modo o sumas
+  // Actualiza oferta automáticamente
   useEffect(() => {
     if (mode === 'trend') setOffer(trendSum);
     else if (mode === 'low') setOffer(lowSum);
   }, [mode, lowSum, trendSum]);
 
-  // Entrada manual
+  // Entrada manual de monto
   const onChangeOffer = (text: string) => {
     setMode('manual');
     setOffer(text);
   };
 
-  // Control de cantidades
+  // Funciones de incremento/decremento de contadores
   const increment = (id: string) => {
     setCounts(prev => {
       const orig = cards.find(c => c.id === id)?.quantity || 0;
@@ -85,7 +88,11 @@ export default function OfferScreen() {
     });
   };
 
-  // Enviar oferta y notificaciones con partner
+  /**
+   * Envía la oferta:
+   * 1) Guarda historial en /api/offers
+   * 2) Crea notificaciones para emisor y receptor
+   */
   const sendOffer = async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
@@ -95,46 +102,67 @@ export default function OfferScreen() {
         return;
       }
 
-      // Notificar destinatario
-      const payload1 = {
-        userId: friendId,
-        partner: storedUser.id,      // incluye partner para backend
-        message: `Has recibido una oferta de ${storedUser.apodo}`,
-        type: 'offer'
+      // --- Preparar payload de historial ---
+      const payloadHistory = {
+        sellerId:  storedUser.id,
+        buyerId:   friendId,
+        buyerName: friendName,
+        amount:    Number(offer),
+        mode, // 'trend' | 'low' | 'manual'
+        date:      new Date().toISOString(),
+        cards:     cards.map(c => ({
+          cardId:    c.id,
+          quantity:  counts[c.id] || 0,
+          unitPrice: mode === 'trend'
+            ? (c.cardmarket?.prices?.trendPrice || 0)
+            : (c.cardmarket?.prices?.lowPrice   || 0),
+          name:      c.name,            // nombre de la carta
+          image:     c.images.small     // URL de la imagen pequeña
+        }))
       };
-      console.log('POST /notifications payload:', payload1);
-      const res1 = await fetch(`${API_URL}/notifications`, {
+
+      // Guardar en backend
+      const resHist = await fetch(`${API_URL}/api/offers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload1)
+        body: JSON.stringify(payloadHistory)
       });
-      console.log('notifications res (destinatario):', res1.status, await res1.text());
+      if (!resHist.ok) {
+        const err = await resHist.json();
+        throw new Error(err.error || 'Error al guardar oferta');
+      }
 
+      // --- Crear notificaciones ---
+      const notifyBase = {
+        partner: storedUser.id,
+        type: 'offer',
+        cards: payloadHistory.cards,
+        amount: payloadHistory.amount
+      };
+      // Notificar receptor
+      await fetch(`${API_URL}/notifications`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ userId:friendId, message:`Has recibido una oferta de ${storedUser.apodo}`, ...notifyBase })
+      });
       // Notificar emisor
-      const payload2 = {
-        userId: storedUser.id,
-        partner: friendId,           // incluye partner para backend
-        message: 'Esperando respuesta de oferta',
-        type: 'offer'
-      };
-      console.log('POST /notifications payload:', payload2);
-      const res2 = await fetch(`${API_URL}/notifications`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload2)
+      await fetch(`${API_URL}/notifications`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ userId:storedUser.id, message:`Esperando respuesta de ${friendName}`, ...notifyBase })
       });
-      console.log('notifications res (emisor):', res2.status, await res2.text());
 
-      // Redirigir a notificaciones
+      // Redirigir a lista de notificaciones
       router.push(`/notifications?userId=${storedUser.id}`);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'No se pudo completar la operación');
+      console.error('Error en sendOffer:', error);
+      Alert.alert('Error', error.message);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Enviar oferta a {friendName}</Text>
+      <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#000' }]}>Enviar oferta a {friendName}</Text>
       <ScrollView contentContainerStyle={styles.listContainer}>
         {cards.map(c => {
           const cur = counts[c.id] || 0;
@@ -145,7 +173,10 @@ export default function OfferScreen() {
           const totalPrice = (unitPrice * cur).toFixed(2);
           return (
             <View key={c.id} style={styles.cardBox}>
-              <Image source={{ uri: c.images.small }} style={styles.cardImage} />
+              {/* Imagen de la carta */}
+              {c.images?.small ? (
+                <Image source={{ uri: c.images.small }} style={styles.cardImage} />
+              ) : null}
               <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}>{c.name}</Text>
               <Text style={[styles.priceText, { color: isDarkMode ? '#fff' : '#000' }]}>Precio: ${totalPrice}</Text>
               <View style={styles.counterContainer}>
@@ -170,16 +201,10 @@ export default function OfferScreen() {
         })}
       </ScrollView>
       <View style={styles.modeButtons}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'trend' && styles.modeButtonSelected]}
-          onPress={() => setMode('trend')}
-        >
+        <TouchableOpacity style={[styles.modeButton, mode==='trend'&&styles.modeButtonSelected]} onPress={()=>setMode('trend')}>
           <Text style={styles.modeText}>Trend</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'low' && styles.modeButtonSelected]}
-          onPress={() => setMode('low')}
-        >
+        <TouchableOpacity style={[styles.modeButton, mode==='low'&&styles.modeButtonSelected]} onPress={()=>setMode('low')}>
           <Text style={styles.modeText}>Low</Text>
         </TouchableOpacity>
       </View>
@@ -188,42 +213,37 @@ export default function OfferScreen() {
         value={offer}
         onChangeText={onChangeOffer}
         placeholder="Ingresa oferta"
-        placeholderTextColor={isDarkMode ? '#888' : '#666'}
+        placeholderTextColor={isDarkMode?'#888':'#666'}
         keyboardType="numeric"
       />
-      <TouchableOpacity
-        style={[styles.sendButton, !offer && styles.sendButtonDisabled]}
-        onPress={() => Alert.alert('Confirmar oferta', '¿Deseas enviar la oferta?', [
-          { text: 'No', style: 'cancel' },
-          { text: 'Sí', onPress: sendOffer }
-        ])}
-        disabled={!offer}
-      >
+      <TouchableOpacity style={[styles.sendButton, !offer&&styles.sendButtonDisabled]} onPress={()=>Alert.alert('Confirmar oferta','¿Deseas enviar la oferta?',[
+        { text:'No', style:'cancel' }, { text:'Sí', onPress:sendOffer }
+      ])} disabled={!offer}>
         <Text style={styles.sendText}>Enviar oferta</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-const getStyles = (isDarkMode: boolean) =>
-  StyleSheet.create({
-    container: { flex: 1, backgroundColor: isDarkMode ? '#121212' : '#fff', padding: 16 },
-    title: { fontSize: 20, fontWeight: '600', marginBottom: 12, color: isDarkMode ? '#fff' : '#000' },
-    listContainer: { paddingVertical: 8 },
-    cardBox: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: isDarkMode ? '#333' : '#ccc' },
-    cardImage: { width: '100%', height: 150, resizeMode: 'contain', borderRadius: 6, marginBottom: 8 },
-    cardText: { fontSize: 16, marginBottom: 4, textAlign: 'center' },
-    priceText: { fontSize: 14, marginBottom: 4, textAlign: 'center' },
-    counterContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-    counterButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#6A0DAD', justifyContent: 'center', alignItems: 'center' },
-    counterDisabled: { backgroundColor: '#888' },
-    counterValue: { marginHorizontal: 12, fontSize: 16, fontWeight: '500' },
-    modeButtons: { flexDirection: 'row', justifyContent: 'center', marginVertical: 12 },
-    modeButton: { marginHorizontal: 8, paddingVertical: 6, paddingHorizontal: 16, borderRadius: 6, backgroundColor: isDarkMode ? '#333' : '#ddd' },
-    modeButtonSelected: { backgroundColor: '#6A0DAD' },
-    modeText: { color: '#fff', fontWeight: '500' },
-    input: { borderWidth: 1, borderColor: isDarkMode ? '#555' : '#ccc', borderRadius: 6, padding: 8, fontSize: 16, color: isDarkMode ? '#fff' : '#000', marginVertical: 12 },
-    sendButton: { backgroundColor: '#6A0DAD', paddingVertical: 12, borderRadius: 6, alignItems: 'center' },
-    sendButtonDisabled: { backgroundColor: '#888' },
-    sendText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  });
+const getStyles = (isDarkMode: boolean) => StyleSheet.create({
+  container:{flex:1,backgroundColor:isDarkMode?'#121212':'#fff',padding:16},
+  title:{fontSize:20,fontWeight:'600',marginBottom:12,color:isDarkMode?'#fff':'#000'},
+  listContainer:{paddingVertical:8},
+  cardBox:{paddingVertical:8,borderBottomWidth:1,borderBottomColor:isDarkMode?'#333':'#ccc',alignItems:'center'},
+  cardImage:{width:100,height:140,resizeMode:'contain',marginBottom:8,borderRadius:6},
+  cardText:{fontSize:16,marginBottom:4,textAlign:'center'},
+  priceText:{fontSize:14,marginBottom:4,textAlign:'center'},
+  counterContainer:{flexDirection:'row',alignItems:'center',justifyContent:'center'},
+  counterButton:{width:32,height:32,borderRadius:16,backgroundColor:'#6A0DAD',justifyContent:'center',alignItems:'center'},
+  counterDisabled:{backgroundColor:'#888'},
+  counterValue:{marginHorizontal:12,fontSize:16,fontWeight:'500'},
+  modeButtons:{flexDirection:'row',justifyContent:'center',marginVertical:12},
+  modeButton:{marginHorizontal:8,paddingVertical:6,paddingHorizontal:16,borderRadius:6,backgroundColor:isDarkMode?'#333':'#ddd'},
+  modeButtonSelected:{backgroundColor:'#6A0DAD'},
+  modeText:{color:'#fff',fontWeight:'500'},
+  input:{borderWidth:1,borderColor:isDarkMode?'#555':'#ccc',borderRadius:6,padding:8,fontSize:16,color:isDarkMode?'#fff':'#000',marginVertical:12},
+  sendButton:{backgroundColor:'#6A0DAD',paddingVertical:12,borderRadius:6,alignItems:'center'},
+  sendButtonDisabled:{backgroundColor:'#888'},
+  sendText:{color:'#fff',fontSize:16,fontWeight:'600'}
+});
+// andy.zuniga.williams@gmail.com

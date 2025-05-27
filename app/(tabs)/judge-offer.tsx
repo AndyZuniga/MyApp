@@ -1,3 +1,16 @@
+/**
+ * JudgeOfferScreen.tsx
+ *
+ * Función de la página:
+ * Pantalla donde el receptor de una oferta revisa los detalles de la misma,
+ * puede aceptar (transferir cartas) o rechazar la oferta.
+ *
+ * Cambios:
+ *  - 2025-05-27 17:00: Corrección de navegación con router.back().
+ *  - 2025-05-27 17:45: Al rechazar, se envía notificación de rechazo al emisor.
+ *  - 2025-05-27 17:55: Al aceptar, se envía notificación de aceptación al emisor.
+ */
+
 import React from 'react';
 import {
   View,
@@ -10,10 +23,9 @@ import {
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
-// URL del backend
+// URL base del backend
 const API_URL = 'https://myappserve-go.onrender.com';
 
 /**
@@ -28,7 +40,6 @@ type OfferedCard = {
 
 export default function JudgeOfferScreen() {
   const router = useRouter();
-  // Recibimos también friendId para gestionar librerías
   const params = useLocalSearchParams<{
     cards?: string;
     offer?: string;
@@ -38,12 +49,18 @@ export default function JudgeOfferScreen() {
   const cards: OfferedCard[] = params.cards ? JSON.parse(params.cards) : [];
   const offer = params.offer ?? '0';
   const friendName = params.friendName ?? '';
-  const friendId = params.friendId as string; // quien ofreció
+  const friendId = params.friendId as string; // ID de quien ofreció
 
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
-    // Aceptar oferta: quitar cartas de mi biblioteca y añadirlas a la del comprador
+  /**
+   * Aceptar oferta:
+   *  - Quita las cartas ofertadas de la biblioteca del usuario actual
+   *  - Añade esas cartas a la biblioteca del comprador (friendId)
+   *  - Envía notificación de aceptación al emisor
+   *  - Vuelve a la pantalla anterior
+   */
   const acceptOffer = async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
@@ -52,17 +69,17 @@ export default function JudgeOfferScreen() {
         Alert.alert('Error', 'Usuario no disponible');
         return;
       }
-      // Por cada carta, quitar de mi librería y añadir a quien compró (friendId)
+      // Procesa cada carta según la cantidad ofertada
       for (const c of cards) {
         const qty = c.quantity || 0;
         for (let i = 0; i < qty; i++) {
-          // Quitar del usuario actual
+          // 1) Quitar del usuario actual
           await fetch(`${API_URL}/library/remove`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: storedUser.id, cardId: c.cardId })
           });
-          // Añadir al comprador
+          // 2) Añadir al comprador
           await fetch(`${API_URL}/library/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -70,8 +87,21 @@ export default function JudgeOfferScreen() {
           });
         }
       }
-      Alert.alert('Oferta aceptada', 'Has aceptado la oferta y actualizado tu biblioteca.', [
-        { text: 'OK', onPress: () => router.push('/notifications') }
+      // 2025-05-27 17:55 - Notificar aceptación al emisor
+      await fetch(`${API_URL}/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: friendId,                     // emisor original
+          partner: storedUser.id,                // receptor actual
+          type: 'offer',
+          cards,
+          amount: Number(offer),
+          message: `Tu oferta ha sido aceptada por ${storedUser.apodo}`
+        })
+      });
+      Alert.alert('Oferta aceptada', 'Has aceptado la oferta.', [
+        { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (err: any) {
       console.error('Error al procesar aceptación:', err);
@@ -79,10 +109,45 @@ export default function JudgeOfferScreen() {
     }
   };
 
+  /**
+   * Rechazar oferta:
+   *  - Envía notificación de rechazo al emisor
+   *  - Vuelve a la pantalla anterior
+   */
   const rejectOffer = () => {
     Alert.alert('Rechazar oferta', '¿Estás seguro de rechazar la oferta?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Rechazar', style: 'destructive', onPress: () => router.goBack() }
+      {
+        text: 'Rechazar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const raw = await AsyncStorage.getItem('user');
+            const storedUser = raw ? JSON.parse(raw) : null;
+            if (!storedUser) {
+              Alert.alert('Error', 'Usuario no disponible');
+              return;
+            }
+            // 2025-05-27 17:45 - Notificar rechazo al emisor
+            await fetch(`${API_URL}/notifications`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: friendId,
+                partner: storedUser.id,
+                type: 'offer',
+                cards,
+                amount: Number(offer),
+                message: `Tu oferta ha sido rechazada por ${storedUser.apodo}`
+              })
+            });
+            router.back();
+          } catch (err: any) {
+            console.error('Error al notificar rechazo:', err);
+            Alert.alert('Error', 'No se pudo notificar el rechazo');
+          }
+        }
+      }
     ]);
   };
 
@@ -93,9 +158,7 @@ export default function JudgeOfferScreen() {
       <ScrollView contentContainerStyle={styles.listContainer}>
         {cards.map((c, idx) => (
           <View key={c.cardId ?? idx} style={styles.cardBox}>
-            {c.image ? (
-              <Image source={{ uri: c.image }} style={styles.cardImage} />
-            ) : null}
+            {c.image ? <Image source={{ uri: c.image }} style={styles.cardImage} /> : null}
             <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}> 
               {c.name ?? c.cardId} × {c.quantity}
             </Text>

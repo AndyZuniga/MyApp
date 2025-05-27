@@ -1,3 +1,13 @@
+/**
+ * OfferScreen.tsx
+ *
+ * Función de la página:
+ * Pantalla para crear y enviar una oferta de intercambio de cartas a un amigo.
+ * Permite ajustar la cantidad de cada carta, seleccionar el modo de cálculo de precios
+ * (trend, low o manual), visualizar el monto total y enviar la oferta al backend,
+ * además de generar notificaciones para emisor y receptor.
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,44 +24,48 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
-// URL del backend
+// URL base del backend para peticiones
 const API_URL = 'https://myappserve-go.onrender.com';
 
 /**
  * Tipo de entrada de carta en OfferScreen
  */
 type CardEntry = {
-  id: string;
-  name: string;
-  images: { small: string };
-  quantity: number;
-  cardmarket?: { prices?: { lowPrice?: number; trendPrice?: number } };
+  id: string;                               // Identificador único de la carta
+  name: string;                             // Nombre de la carta
+  images: { small: string };                // URL de imagen pequeña
+  quantity: number;                         // Cantidad máxima disponible para oferta
+  cardmarket?: {                            // Datos de precio desde Cardmarket
+    prices?: { lowPrice?: number; trendPrice?: number }
+  };
 };
 
 export default function OfferScreen() {
+  // Hooks de navegación y parámetros recibidos
   const router = useRouter();
   const params = useLocalSearchParams<{ cards: string; friendId?: string; friendName?: string }>();
-  const friendId = params.friendId as string;
-  const friendName = params.friendName ?? 'Amigo';
+  const friendId = params.friendId as string;                        // ID del amigo receptor
+  const friendName = params.friendName ?? 'Amigo';                   // Nombre visible del amigo
   const cards: CardEntry[] = React.useMemo(
     () => JSON.parse(params.cards || '[]'),
     [params.cards]
-  );
+  );  // Array de cartas para ofertar
 
-  const [mode, setMode] = useState<'trend' | 'low' | 'manual'>('trend');
-  const [offer, setOffer] = useState<string>('');
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const isDarkMode = useColorScheme() === 'dark';
+  // Estados locales
+  const [mode, setMode] = useState<'trend' | 'low' | 'manual'>('trend');  // Modo de cálculo de precio
+  const [offer, setOffer] = useState<string>('');                        // Monto total de la oferta
+  const [counts, setCounts] = useState<Record<string, number>>({});       // Contadores por carta
+  const isDarkMode = useColorScheme() === 'dark';                        // Detecta tema
   const styles = getStyles(isDarkMode);
 
-  // Inicializar contadores con la cantidad máxima disponible
+  // Inicializa los contadores con la cantidad máxima disponible de cada carta
   useEffect(() => {
     const init: Record<string, number> = {};
     cards.forEach(c => { init[c.id] = c.quantity; });
     setCounts(init);
   }, [cards]);
 
-  // Cálculo de sumas según modo
+  // Cálculo de sumas según modo 'low' y 'trend'
   const lowSum = cards
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
@@ -59,19 +73,19 @@ export default function OfferScreen() {
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.trendPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
 
-  // Actualiza oferta automáticamente
+  // Actualiza el estado de oferta automáticamente al cambiar el modo
   useEffect(() => {
     if (mode === 'trend') setOffer(trendSum);
     else if (mode === 'low') setOffer(lowSum);
   }, [mode, lowSum, trendSum]);
 
-  // Entrada manual de monto
+  // Maneja entrada manual de monto y cambia modo a 'manual'
   const onChangeOffer = (text: string) => {
     setMode('manual');
     setOffer(text);
   };
 
-  // Funciones de incremento/decremento de contadores
+  // Incrementa el contador de una carta, sin superar la cantidad disponible
   const increment = (id: string) => {
     setCounts(prev => {
       const orig = cards.find(c => c.id === id)?.quantity || 0;
@@ -80,6 +94,7 @@ export default function OfferScreen() {
       return prev;
     });
   };
+  // Decrementa el contador de una carta, sin caer por debajo de cero
   const decrement = (id: string) => {
     setCounts(prev => {
       const cur = prev[id] || 0;
@@ -95,6 +110,7 @@ export default function OfferScreen() {
    */
   const sendOffer = async () => {
     try {
+      // Obtiene datos de usuario logueado desde AsyncStorage
       const raw = await AsyncStorage.getItem('user');
       const storedUser = raw ? JSON.parse(raw) : null;
       if (!storedUser) {
@@ -102,13 +118,13 @@ export default function OfferScreen() {
         return;
       }
 
-      // --- Preparar payload de historial ---
+      // Prepara datos para historial de oferta
       const payloadHistory = {
         sellerId:  storedUser.id,
         buyerId:   friendId,
         buyerName: friendName,
         amount:    Number(offer),
-        mode, // 'trend' | 'low' | 'manual'
+        mode,            // 'trend' | 'low' | 'manual'
         date:      new Date().toISOString(),
         cards:     cards.map(c => ({
           cardId:    c.id,
@@ -116,12 +132,12 @@ export default function OfferScreen() {
           unitPrice: mode === 'trend'
             ? (c.cardmarket?.prices?.trendPrice || 0)
             : (c.cardmarket?.prices?.lowPrice   || 0),
-          name:      c.name,            // nombre de la carta
-          image:     c.images.small     // URL de la imagen pequeña
+          name:      c.name,
+          image:     c.images.small
         }))
       };
 
-      // Guardar en backend
+      // Envía historial al backend
       const resHist = await fetch(`${API_URL}/api/offers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,27 +148,38 @@ export default function OfferScreen() {
         throw new Error(err.error || 'Error al guardar oferta');
       }
 
-      // --- Crear notificaciones ---
+      // Base de notificaciones sin partner
       const notifyBase = {
-        partner: storedUser.id,
         type: 'offer',
         cards: payloadHistory.cards,
         amount: payloadHistory.amount
       };
-      // Notificar receptor
+
+      // Notifica al receptor de la oferta (partner = emisor)
       await fetch(`${API_URL}/notifications`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ userId:friendId, message:`Has recibido una oferta de ${storedUser.apodo}`, ...notifyBase })
-      });
-      // Notificar emisor
-      await fetch(`${API_URL}/notifications`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ userId:storedUser.id, message:`Esperando respuesta de ${friendName}`, ...notifyBase })
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          userId: friendId,
+          partner: storedUser.id,
+          message: `Has recibido una oferta de ${storedUser.apodo}`,
+          ...notifyBase
+        })
       });
 
-      // Redirigir a lista de notificaciones
+      // Notifica al emisor que espera respuesta (partner = receptor)
+      await fetch(`${API_URL}/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          userId: storedUser.id,
+          partner: friendId,
+          message: `Esperando respuesta de ${friendName}`,
+          ...notifyBase
+        })
+      });
+
+      // Redirige a la lista de notificaciones
       router.push(`/notifications?userId=${storedUser.id}`);
     } catch (error: any) {
       console.error('Error en sendOffer:', error);
@@ -162,7 +189,10 @@ export default function OfferScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Título y destino de oferta */}
       <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#000' }]}>Enviar oferta a {friendName}</Text>
+
+      {/* Lista de cartas con contadores */}
       <ScrollView contentContainerStyle={styles.listContainer}>
         {cards.map(c => {
           const cur = counts[c.id] || 0;
@@ -173,12 +203,15 @@ export default function OfferScreen() {
           const totalPrice = (unitPrice * cur).toFixed(2);
           return (
             <View key={c.id} style={styles.cardBox}>
-              {/* Imagen de la carta */}
+              {/* Imagen de carta */}
               {c.images?.small ? (
                 <Image source={{ uri: c.images.small }} style={styles.cardImage} />
               ) : null}
+              {/* Nombre y precio total */}
               <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}>{c.name}</Text>
               <Text style={[styles.priceText, { color: isDarkMode ? '#fff' : '#000' }]}>Precio: ${totalPrice}</Text>
+
+              {/* Controles de incremento/decremento */}
               <View style={styles.counterContainer}>
                 <TouchableOpacity
                   style={[styles.counterButton, cur === 0 && styles.counterDisabled]}
@@ -200,8 +233,10 @@ export default function OfferScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Botones para cambiar modo de cálculo */}
       <View style={styles.modeButtons}>
-        <TouchableOpacity style={[styles.modeButton, mode==='trend'&&styles.modeButtonSelected]} onPress={()=>setMode('trend')}>
+        <TouchableOpacity style={[styles.modeButton, mode==='trend' && styles.modeButtonSelected]} onPress={()=>setMode('trend')}>
           <Text style={styles.modeText}>Trend</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.modeButton, mode==='low'&&styles.modeButtonSelected]} onPress={()=>setMode('low')}>

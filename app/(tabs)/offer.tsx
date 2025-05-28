@@ -1,71 +1,50 @@
 /**
  * OfferScreen.tsx
- *
- * Función de la página:
- * Pantalla para crear y enviar una oferta de intercambio de cartas a un amigo.
- * Permite ajustar la cantidad de cada carta, seleccionar el modo de cálculo de precios
- * (trend, low o manual), visualizar el monto total y enviar la oferta al backend,
- * además de generar notificaciones para emisor y receptor.
  */
 
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  TextInput,
-  useColorScheme,
-  Image,
-  Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  TextInput, useColorScheme, Image, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
-// URL base del backend para peticiones
 const API_URL = 'https://myappserve-go.onrender.com';
 
-/**
- * Tipo de entrada de carta en OfferScreen
- */
 type CardEntry = {
-  id: string;                               // Identificador único de la carta
-  name: string;                             // Nombre de la carta
-  images: { small: string };                // URL de imagen pequeña
-  quantity: number;                         // Cantidad máxima disponible para oferta
-  cardmarket?: {                            // Datos de precio desde Cardmarket
-    prices?: { lowPrice?: number; trendPrice?: number }
+  id: string;
+  name: string;
+  images: { small: string };
+  quantity: number;
+  cardmarket?: {
+    prices?: { lowPrice?: number; trendPrice?: number };
   };
 };
 
 export default function OfferScreen() {
-  // Hooks de navegación y parámetros recibidos
   const router = useRouter();
   const params = useLocalSearchParams<{ cards: string; friendId?: string; friendName?: string }>();
-  const friendId = params.friendId as string;                        // ID del amigo receptor
-  const friendName = params.friendName ?? 'Amigo';                   // Nombre visible del amigo
+  const friendId = params.friendId as string;
+  const friendName = params.friendName ?? 'Amigo';
   const cards: CardEntry[] = React.useMemo(
     () => JSON.parse(params.cards || '[]'),
     [params.cards]
-  );  // Array de cartas para ofertar
+  );
 
-  // Estados locales
-  const [mode, setMode] = useState<'trend' | 'low' | 'manual'>('trend');  // Modo de cálculo de precio
-  const [offer, setOffer] = useState<string>('');                        // Monto total de la oferta
-  const [counts, setCounts] = useState<Record<string, number>>({});       // Contadores por carta
-  const isDarkMode = useColorScheme() === 'dark';                        // Detecta tema
+  const [mode, setMode] = useState<'trend' | 'low' | 'manual'>('trend');
+  const [offer, setOffer] = useState<string>('');
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
-  // Inicializa los contadores con la cantidad máxima disponible de cada carta
   useEffect(() => {
     const init: Record<string, number> = {};
     cards.forEach(c => { init[c.id] = c.quantity; });
     setCounts(init);
   }, [cards]);
 
-  // Cálculo de sumas según modo 'low' y 'trend'
   const lowSum = cards
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
@@ -73,19 +52,16 @@ export default function OfferScreen() {
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.trendPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
 
-  // Actualiza el estado de oferta automáticamente al cambiar el modo
   useEffect(() => {
     if (mode === 'trend') setOffer(trendSum);
     else if (mode === 'low') setOffer(lowSum);
   }, [mode, lowSum, trendSum]);
 
-  // Maneja entrada manual de monto y cambia modo a 'manual'
   const onChangeOffer = (text: string) => {
     setMode('manual');
     setOffer(text);
   };
 
-  // Incrementa el contador de una carta, sin superar la cantidad disponible
   const increment = (id: string) => {
     setCounts(prev => {
       const orig = cards.find(c => c.id === id)?.quantity || 0;
@@ -94,7 +70,7 @@ export default function OfferScreen() {
       return prev;
     });
   };
-  // Decrementa el contador de una carta, sin caer por debajo de cero
+
   const decrement = (id: string) => {
     setCounts(prev => {
       const cur = prev[id] || 0;
@@ -103,14 +79,8 @@ export default function OfferScreen() {
     });
   };
 
-  /**
-   * Envía la oferta:
-   * 1) Guarda historial en /api/offers
-   * 2) Crea notificaciones para emisor y receptor
-   */
   const sendOffer = async () => {
     try {
-      // Obtiene datos de usuario logueado desde AsyncStorage
       const raw = await AsyncStorage.getItem('user');
       const storedUser = raw ? JSON.parse(raw) : null;
       if (!storedUser) {
@@ -118,26 +88,24 @@ export default function OfferScreen() {
         return;
       }
 
-      // Prepara datos para historial de oferta
       const payloadHistory = {
-        sellerId:  storedUser.id,
-        buyerId:   friendId,
+        sellerId: storedUser.id,
+        buyerId: friendId,
         buyerName: friendName,
-        amount:    Number(offer),
-        mode,            // 'trend' | 'low' | 'manual'
-        date:      new Date().toISOString(),
-        cards:     cards.map(c => ({
-          cardId:    c.id,
-          quantity:  counts[c.id] || 0,
+        amount: Number(offer),
+        mode,
+        date: new Date().toISOString(),
+        cards: cards.map(c => ({
+          cardId: c.id,
+          quantity: counts[c.id] || 0,
           unitPrice: mode === 'trend'
             ? (c.cardmarket?.prices?.trendPrice || 0)
-            : (c.cardmarket?.prices?.lowPrice   || 0),
-          name:      c.name,
-          image:     c.images.small
+            : (c.cardmarket?.prices?.lowPrice || 0),
+          name: c.name,
+          image: c.images.small
         }))
       };
 
-      // Envía historial al backend
       const resHist = await fetch(`${API_URL}/api/offers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,17 +116,16 @@ export default function OfferScreen() {
         throw new Error(err.error || 'Error al guardar oferta');
       }
 
-      // Base de notificaciones sin partner
       const notifyBase = {
         type: 'offer',
         cards: payloadHistory.cards,
         amount: payloadHistory.amount
       };
 
-      // Notifica al receptor de la oferta (partner = emisor)
-      await fetch(`${API_URL}/notifications`, {
+      // Notificar receptor (captura ID)
+      const resReceptor = await fetch(`${API_URL}/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type':'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: friendId,
           partner: storedUser.id,
@@ -166,11 +133,13 @@ export default function OfferScreen() {
           ...notifyBase
         })
       });
+      if (!resReceptor.ok) throw new Error('Error al notificar al receptor');
+      const { notification: receptorNoti } = await resReceptor.json();
 
-      // Notifica al emisor que espera respuesta (partner = receptor)
+      // Notificar emisor
       await fetch(`${API_URL}/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type':'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: storedUser.id,
           partner: friendId,
@@ -179,8 +148,8 @@ export default function OfferScreen() {
         })
       });
 
-      // Redirige a la lista de notificaciones
-      router.push(`/notifications?userId=${storedUser.id}`);
+      // Redirige a NotificationsScreen pasando notificationId del receptor
+      router.push(`/notifications?userId=${storedUser.id}&newNotificationId=${receptorNoti._id}`);
     } catch (error: any) {
       console.error('Error en sendOffer:', error);
       Alert.alert('Error', error.message);
@@ -189,10 +158,7 @@ export default function OfferScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Título y destino de oferta */}
       <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#000' }]}>Enviar oferta a {friendName}</Text>
-
-      {/* Lista de cartas con contadores */}
       <ScrollView contentContainerStyle={styles.listContainer}>
         {cards.map(c => {
           const cur = counts[c.id] || 0;
@@ -203,15 +169,11 @@ export default function OfferScreen() {
           const totalPrice = (unitPrice * cur).toFixed(2);
           return (
             <View key={c.id} style={styles.cardBox}>
-              {/* Imagen de carta */}
               {c.images?.small ? (
                 <Image source={{ uri: c.images.small }} style={styles.cardImage} />
               ) : null}
-              {/* Nombre y precio total */}
               <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}>{c.name}</Text>
               <Text style={[styles.priceText, { color: isDarkMode ? '#fff' : '#000' }]}>Precio: ${totalPrice}</Text>
-
-              {/* Controles de incremento/decremento */}
               <View style={styles.counterContainer}>
                 <TouchableOpacity
                   style={[styles.counterButton, cur === 0 && styles.counterDisabled]}
@@ -234,12 +196,11 @@ export default function OfferScreen() {
         })}
       </ScrollView>
 
-      {/* Botones para cambiar modo de cálculo */}
       <View style={styles.modeButtons}>
         <TouchableOpacity style={[styles.modeButton, mode==='trend' && styles.modeButtonSelected]} onPress={()=>setMode('trend')}>
           <Text style={styles.modeText}>Trend</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.modeButton, mode==='low'&&styles.modeButtonSelected]} onPress={()=>setMode('low')}>
+        <TouchableOpacity style={[styles.modeButton, mode==='low' && styles.modeButtonSelected]} onPress={()=>setMode('low')}>
           <Text style={styles.modeText}>Low</Text>
         </TouchableOpacity>
       </View>
@@ -248,12 +209,17 @@ export default function OfferScreen() {
         value={offer}
         onChangeText={onChangeOffer}
         placeholder="Ingresa oferta"
-        placeholderTextColor={isDarkMode?'#888':'#666'}
+        placeholderTextColor={isDarkMode ? '#888' : '#666'}
         keyboardType="numeric"
       />
-      <TouchableOpacity style={[styles.sendButton, !offer&&styles.sendButtonDisabled]} onPress={()=>Alert.alert('Confirmar oferta','¿Deseas enviar la oferta?',[
-        { text:'No', style:'cancel' }, { text:'Sí', onPress:sendOffer }
-      ])} disabled={!offer}>
+      <TouchableOpacity
+        style={[styles.sendButton, !offer && styles.sendButtonDisabled]}
+        onPress={() => Alert.alert('Confirmar oferta', '¿Deseas enviar la oferta?', [
+          { text: 'No', style: 'cancel' },
+          { text: 'Sí', onPress: sendOffer }
+        ])}
+        disabled={!offer}
+      >
         <Text style={styles.sendText}>Enviar oferta</Text>
       </TouchableOpacity>
     </View>
@@ -281,4 +247,3 @@ const getStyles = (isDarkMode: boolean) => StyleSheet.create({
   sendButtonDisabled:{backgroundColor:'#888'},
   sendText:{color:'#fff',fontSize:16,fontWeight:'600'}
 });
-// andy.zuniga.williams@gmail.com

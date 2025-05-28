@@ -260,9 +260,20 @@ export default function HomeScreen() {
         <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/friends')}>
           <Ionicons name="people-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')}>
-          <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
-        </TouchableOpacity>
+        <TouchableOpacity
+  style={styles.iconButton}
+  onPress={async () => {
+    const raw = await AsyncStorage.getItem('user');
+    const storedUser = raw ? JSON.parse(raw) : null;
+    if (storedUser) {
+      router.push(`/notifications?userId=${storedUser.id}`);
+    } else {
+      Alert.alert('Error', 'No se pudo recuperar el usuario');
+    }
+  }}
+>
+  <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+</TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={() => {
           Alert.alert('Opciones', undefined, [
             { text: 'Mis datos', onPress: () => userObj && Alert.alert('Datos de usuario', `Apodo: ${userObj.apodo} Correo: ${userObj.correo}`) },

@@ -2,7 +2,7 @@
   "expo": {
     "name": "SetMatch",
     "slug": "SetMatch",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "setmatch",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.setmatch.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "intentFilters": [
         {
           "action": "VIEW",

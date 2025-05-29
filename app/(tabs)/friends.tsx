@@ -254,18 +254,30 @@ export default function FriendsScreen() {
       {renderContent()}
       {/* Barra inferior */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => {}}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => {
+          if (!userObj) return Alert.alert('Usuario no disponible');
+          const usuarioParam = encodeURIComponent(JSON.stringify(userObj));
+          router.push({ pathname: '/library', params: { usuario: usuarioParam } });
+        }}>
           <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={goHome}>
           <Image source={require('@/assets/images/pokeball.png')} style={[styles.homeIcon, { tintColor: isDarkMode ? '#fff' : '#000' }]} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton} onPress={() => {}}>
-          <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton} onPress={() => {}}>
-          <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
-        </TouchableOpacity>
+        <TouchableOpacity
+  style={styles.iconButton}
+  onPress={async () => {
+    const raw = await AsyncStorage.getItem('user');
+    const storedUser = raw ? JSON.parse(raw) : null;
+    if (storedUser) {
+      router.push(`/notifications?userId=${storedUser.id}`);
+    } else {
+      Alert.alert('Error', 'No se pudo recuperar el usuario');
+    }
+  }}
+>
+  <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+</TouchableOpacity>
       </View>
     </View>
   );

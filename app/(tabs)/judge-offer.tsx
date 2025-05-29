@@ -21,6 +21,9 @@ type OfferedCard = {
   image?: string;
 };
 
+/**
+ * Pantalla para aceptar o rechazar una oferta recibida.
+ */
 export default function JudgeOfferScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -29,19 +32,41 @@ export default function JudgeOfferScreen() {
     friendName?: string;
     friendId?: string;
     receptorId?: string;
-    emisorId?: string;
   }>();
 
   const cards: OfferedCard[] = params.cards ? JSON.parse(params.cards) : [];
   const offer = params.offer ?? '0';
   const friendName = params.friendName ?? '';
-  const friendId = params.friendId as string;
   const receptorId = params.receptorId as string;
-  const emisorId = params.emisorId as string;
 
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
+  /**
+   * Envía la acción al endpoint de respuesta de notificación;
+   * el backend actualiza tanto la notificación receptor como su contraparte.
+   */
+  const respondNotification = async (
+    notificationId: string,
+    action: 'accept' | 'reject',
+    byApodo: string
+  ) => {
+    const res = await fetch(
+      `${API_URL}/notifications/${notificationId}/respond`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, byApodo })
+      }
+    );
+    const body = await res.json();
+    console.log('PATCH responde', res.status, body);
+    if (!res.ok) throw new Error(body.error || 'Error al responder notificación');
+  };
+
+  /**
+   * Maneja la aceptación de la oferta: intercambio de cartas y notificación.
+   */
   const acceptOffer = async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
@@ -51,6 +76,7 @@ export default function JudgeOfferScreen() {
         return;
       }
 
+      // Intercambio de cartas
       for (const c of cards) {
         const qty = c.quantity || 0;
         for (let i = 0; i < qty; i++) {
@@ -62,24 +88,13 @@ export default function JudgeOfferScreen() {
           await fetch(`${API_URL}/library/add`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: friendId, cardId: c.cardId })
+            body: JSON.stringify({ userId: params.friendId, cardId: c.cardId })
           });
         }
       }
 
-      // PATCH receptor
-      await fetch(`${API_URL}/notifications/${receptorId}/respond`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'accept', byApodo: friendName })
-      });
-
-      // PATCH emisor
-      await fetch(`${API_URL}/notifications/${emisorId}/respond`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'accept', byApodo: storedUser.apodo })
-      });
+      // Notificar backend (receptor + contraparte)
+      await respondNotification(receptorId, 'accept', storedUser.apodo);
 
       Alert.alert('Oferta aceptada', 'Has aceptado la oferta.', [
         { text: 'OK', onPress: () => router.back() }
@@ -90,6 +105,9 @@ export default function JudgeOfferScreen() {
     }
   };
 
+  /**
+   * Muestra confirmación y notifica el rechazo de la oferta.
+   */
   const rejectOffer = () => {
     Alert.alert('Rechazar oferta', '¿Estás seguro de rechazar la oferta?', [
       { text: 'Cancelar', style: 'cancel' },
@@ -105,24 +123,15 @@ export default function JudgeOfferScreen() {
               return;
             }
 
-            // PATCH receptor
-            await fetch(`${API_URL}/notifications/${receptorId}/respond`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'reject', byApodo: friendName })
-            });
+            // Notificar backend (receptor + contraparte)
+            await respondNotification(receptorId, 'reject', storedUser.apodo);
 
-            // PATCH emisor
-            await fetch(`${API_URL}/notifications/${emisorId}/respond`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'reject', byApodo: storedUser.apodo })
-            });
-
-            router.back();
+            Alert.alert('Oferta rechazada', 'Has rechazado la oferta.', [
+              { text: 'OK', onPress: () => router.back() }
+            ]);
           } catch (err: any) {
             console.error('Error al notificar rechazo:', err);
-            Alert.alert('Error', 'No se pudo notificar el rechazo');
+            Alert.alert('Error', err.message || 'No se pudo notificar el rechazo');
           }
         }
       }
@@ -136,7 +145,7 @@ export default function JudgeOfferScreen() {
       <ScrollView contentContainerStyle={styles.listContainer}>
         {cards.map((c, idx) => (
           <View key={c.cardId ?? idx} style={styles.cardBox}>
-            {c.image ? <Image source={{ uri: c.image }} style={styles.cardImage} /> : null}
+            {c.image && <Image source={{ uri: c.image }} style={styles.cardImage} />}
             <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}> 
               {c.name ?? c.cardId} × {c.quantity}
             </Text>

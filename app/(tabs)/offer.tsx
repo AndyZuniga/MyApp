@@ -1,7 +1,3 @@
-/**
- * OfferScreen.tsx
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
@@ -33,18 +29,25 @@ export default function OfferScreen() {
     [params.cards]
   );
 
+  // Estados para counts y oferta
   const [mode, setMode] = useState<'trend' | 'low' | 'manual'>('trend');
   const [offer, setOffer] = useState<string>('');
   const [counts, setCounts] = useState<Record<string, number>>({});
+  // Estados para almacenar IDs de notificaciones
+  const [receptorNotiId, setReceptorNotiId] = useState<string | null>(null);
+  const [emisorNotiId, setEmisorNotiId] = useState<string | null>(null);
+
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
 
+  // Inicializa counts
   useEffect(() => {
     const init: Record<string, number> = {};
     cards.forEach(c => { init[c.id] = c.quantity; });
     setCounts(init);
   }, [cards]);
 
+  // Calcula sumas de precio
   const lowSum = cards
     .reduce((sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * (counts[c.id] || 0), 0)
     .toFixed(2);
@@ -64,9 +67,9 @@ export default function OfferScreen() {
 
   const increment = (id: string) => {
     setCounts(prev => {
-      const orig = cards.find(c => c.id === id)?.quantity || 0;
+      const max = cards.find(c => c.id === id)?.quantity || 0;
       const cur = prev[id] || 0;
-      if (cur < orig) return { ...prev, [id]: cur + 1 };
+      if (cur < max) return { ...prev, [id]: cur + 1 };
       return prev;
     });
   };
@@ -79,6 +82,29 @@ export default function OfferScreen() {
     });
   };
 
+  /**
+   * Responde a una notificación existente usando tu endpoint PATCH /notifications/:id/respond
+   * @param notiId ID de la notificación a actualizar
+   * @param action 'accept' o 'reject'
+   * @param byApodo Apodo del usuario que realiza la acción
+   */
+  const respondNotification = async (
+    notiId: string,
+    action: 'accept' | 'reject',
+    byApodo: string
+  ) => {
+    try {
+      await fetch(`${API_URL}/notifications/${notiId}/respond`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, byApodo })
+      });
+    } catch (error) {
+      console.error(`Error al responder notificación ${notiId}:`, error);
+    }
+  };
+
+  // Envía la oferta y captura ambos IDs de notificación
   const sendOffer = async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
@@ -88,6 +114,7 @@ export default function OfferScreen() {
         return;
       }
 
+      // Registra oferta en historial
       const payloadHistory = {
         sellerId: storedUser.id,
         buyerId: friendId,
@@ -122,7 +149,7 @@ export default function OfferScreen() {
         amount: payloadHistory.amount
       };
 
-      // Notificar receptor (captura ID)
+      // Notificar receptor y capturar ID
       const resReceptor = await fetch(`${API_URL}/notifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,9 +162,10 @@ export default function OfferScreen() {
       });
       if (!resReceptor.ok) throw new Error('Error al notificar al receptor');
       const { notification: receptorNoti } = await resReceptor.json();
+      setReceptorNotiId(receptorNoti._id);
 
-      // Notificar emisor
-      await fetch(`${API_URL}/notifications`, {
+      // Notificar emisor y capturar ID
+      const resEmisor = await fetch(`${API_URL}/notifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -147,9 +175,26 @@ export default function OfferScreen() {
           ...notifyBase
         })
       });
+      if (!resEmisor.ok) throw new Error('Error al notificar al emisor');
+      const { notification: emisorNoti } = await resEmisor.json();
+      setEmisorNotiId(emisorNoti._id);
 
-      // Redirige a NotificationsScreen pasando notificationId del receptor
-      router.push(`/notifications?userId=${storedUser.id}&newNotificationId=${receptorNoti._id}`);
+      // Mostrar detalles de notificación
+      const emitterName = storedUser.nombre ?? storedUser.apodo;
+      const emitterApodo = storedUser.apodo;
+      const receptorName = friendName;
+      const receptorApodo = friendName; // usa friendName como apodo si no hay otro
+      Alert.alert(
+        'Detalles de Notificación',
+        `Emisor: ${emitterName} (${emitterApodo})\n` +
+        `Receptor: ${receptorName} (${receptorApodo})\n\n` +
+        `IDs:\nReceptor: ${receptorNoti._id}\nEmisor: ${emisorNoti._id}`
+      );
+
+      // Redirige a pantalla de notificaciones
+      router.push(
+        `/notifications?userId=${storedUser.id}&newNotificationId=${receptorNoti._id}`
+      );
     } catch (error: any) {
       console.error('Error en sendOffer:', error);
       Alert.alert('Error', error.message);
@@ -169,9 +214,7 @@ export default function OfferScreen() {
           const totalPrice = (unitPrice * cur).toFixed(2);
           return (
             <View key={c.id} style={styles.cardBox}>
-              {c.images?.small ? (
-                <Image source={{ uri: c.images.small }} style={styles.cardImage} />
-              ) : null}
+              {c.images?.small && <Image source={{ uri: c.images.small }} style={styles.cardImage} />}
               <Text style={[styles.cardText, { color: isDarkMode ? '#fff' : '#000' }]}>{c.name}</Text>
               <Text style={[styles.priceText, { color: isDarkMode ? '#fff' : '#000' }]}>Precio: ${totalPrice}</Text>
               <View style={styles.counterContainer}>

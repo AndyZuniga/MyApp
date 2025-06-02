@@ -173,7 +173,14 @@ export default function NotificationsScreen() {
 
 const getStyles = (isDarkMode: boolean) => StyleSheet.create({
   container: { flex:1, backgroundColor: isDarkMode?'#121212':'#fff' },
-  searchContainer: { padding:24,  paddingBottom: 16 },
+    searchContainer: {
+    // Añade la altura de la status bar + 24 puntos de padding interior
+    paddingTop: Platform.OS === 'android'
+      ? (StatusBar.currentHeight ?? 0) + 24
+      : 24,
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+  },
   searchInput: { borderWidth:1, borderRadius:6, padding:8, marginBottom:12 },
   filterContainer: { paddingBottom:12 },
   filterButton: { marginRight:8, paddingHorizontal:12, paddingVertical:6, borderRadius:6, backgroundColor:isDarkMode?'#333':'#eee' },
@@ -186,7 +193,7 @@ const getStyles = (isDarkMode: boolean) => StyleSheet.create({
   date: { fontSize:12, color:isDarkMode?'#888':'#666' },
   viewButton: { backgroundColor:'#6A0DAD', paddingVertical:8, paddingHorizontal:16, borderRadius:6 },
   viewText: { color:'#fff', fontWeight:'600' },
-  bottomBar: { position:'absolute', bottom:0, left:0, right:0, height:60, flexDirection:'row', justifyContent:'space-around', alignItems:'center', backgroundColor:isDarkMode?'#1e1e1e':'#fff', borderTopWidth:1, borderTopColor:isDarkMode?'#333':'#ccc' },
+  bottomBar: { position:'absolute', bottom:0, left:0, right:0, height:0, flexDirection:'row', justifyContent:'space-around', alignItems:'center', backgroundColor:isDarkMode?'#1e1e1e':'#fff', borderTopWidth:1, borderTopColor:isDarkMode?'#333':'#ccc' },
   iconButton: { padding:8 },
    homeIcon: { width: 28, height: 28, tintColor: isDarkMode ? '#fff' : '#000' },
 });

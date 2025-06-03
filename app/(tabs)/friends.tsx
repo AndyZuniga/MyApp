@@ -1,3 +1,4 @@
+//dia 6
 import React, { useState, useEffect } from 'react';
 import {
   View,

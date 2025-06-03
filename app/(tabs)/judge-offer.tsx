@@ -1,13 +1,10 @@
+// judge-offer.tsx
+// Última edición: 2025-06-03 10:15 - Incluye nombre y apodo en la alerta de rechazo.
+
 import React from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  useColorScheme,
-  Image,
-  Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  useColorScheme, Image, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -27,6 +24,7 @@ type OfferedCard = {
 export default function JudgeOfferScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    notificationId?: string; // ahora usamos este parámetro
     cards?: string;
     offer?: string;
     friendName?: string;
@@ -34,10 +32,11 @@ export default function JudgeOfferScreen() {
     receptorId?: string;
   }>();
 
+  const notificationId = params.notificationId as string; // ID de la notificación a responder
   const cards: OfferedCard[] = params.cards ? JSON.parse(params.cards) : [];
   const offer = params.offer ?? '0';
   const friendName = params.friendName ?? '';
-  const receptorId = params.receptorId as string;
+  const receptorId = params.receptorId as string; // ID de usuario receptor, ya no se usa para responder notificación
 
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
@@ -47,12 +46,12 @@ export default function JudgeOfferScreen() {
    * el backend actualiza tanto la notificación receptor como su contraparte.
    */
   const respondNotification = async (
-    notificationId: string,
+    notiId: string,
     action: 'accept' | 'reject',
     byApodo: string
   ) => {
     const res = await fetch(
-      `${API_URL}/notifications/${notificationId}/respond`,
+      `${API_URL}/notifications/${notiId}/respond`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +93,7 @@ export default function JudgeOfferScreen() {
       }
 
       // Notificar backend (receptor + contraparte)
-      await respondNotification(receptorId, 'accept', storedUser.apodo);
+      await respondNotification(notificationId, 'accept', storedUser.apodo);
 
       Alert.alert('Oferta aceptada', 'Has aceptado la oferta.', [
         { text: 'OK', onPress: () => router.back() }
@@ -123,12 +122,15 @@ export default function JudgeOfferScreen() {
               return;
             }
 
-            // Notificar backend (receptor + contraparte)
-            await respondNotification(receptorId, 'reject', storedUser.apodo);
+            // Notificar backend (usamos notificationId en vez de receptorId)
+            await respondNotification(notificationId, 'reject', storedUser.apodo);
 
-            Alert.alert('Oferta rechazada', 'Has rechazado la oferta.', [
-              { text: 'OK', onPress: () => router.back() }
-            ]);
+            // Incluir nombre y apodo del emisor en la alerta
+            Alert.alert(
+              'Oferta rechazada',
+              `Has rechazado la oferta de ${friendName} (${friendName})`,
+              [ { text: 'OK', onPress: () => router.back() } ]
+            );
           } catch (err: any) {
             console.error('Error al notificar rechazo:', err);
             Alert.alert('Error', err.message || 'No se pudo notificar el rechazo');

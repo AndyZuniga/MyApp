@@ -562,4 +562,8 @@ const getStyles = (isDarkMode: boolean) =>
       flexDirection: 'column',
       alignItems: 'flex-end',
     },
+<<<<<<< HEAD
   });
+=======
+  });
+>>>>>>> 76b405a147b4ca78f7f93dd6f5fbbb25e99d9493

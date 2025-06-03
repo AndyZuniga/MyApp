@@ -1,5 +1,5 @@
 // judge-offer.tsx
-// Última edición: 2025-06-03 10:00 - Corregido `rejectOffer` para usar `notificationId` en lugar de `receptorId`.
+// Última edición: 2025-06-03 10:15 - Incluye nombre y apodo en la alerta de rechazo.
 
 import React from 'react';
 import {
@@ -125,9 +125,12 @@ export default function JudgeOfferScreen() {
             // Notificar backend (usamos notificationId en vez de receptorId)
             await respondNotification(notificationId, 'reject', storedUser.apodo);
 
-            Alert.alert('Oferta rechazada', 'Has rechazado la oferta.', [
-              { text: 'OK', onPress: () => router.back() }
-            ]);
+            // Incluir nombre y apodo del emisor en la alerta
+            Alert.alert(
+              'Oferta rechazada',
+              `Has rechazado la oferta de ${friendName} (${friendName})`,
+              [ { text: 'OK', onPress: () => router.back() } ]
+            );
           } catch (err: any) {
             console.error('Error al notificar rechazo:', err);
             Alert.alert('Error', err.message || 'No se pudo notificar el rechazo');

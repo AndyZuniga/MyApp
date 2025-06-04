@@ -62,6 +62,36 @@ export default function FriendsScreen() {
   // Función para navegar a la pantalla Home
   const goHome = () => router.push('/home');
 
+    const showOptions = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('user');
+      const user = raw ? JSON.parse(raw) : null;
+      Alert.alert('Opciones', undefined, [
+        {
+          text: 'Mis datos',
+          onPress: () =>
+            user &&
+            Alert.alert(
+              'Datos de usuario',
+              `Apodo: ${user.apodo}\nCorreo: ${user.correo}`
+            ),
+        },
+        {
+          text: 'Cerrar Sesión',
+          style: 'destructive',
+          onPress: async () => {
+            await AsyncStorage.removeItem('user');
+            router.replace('/login');
+          },
+        },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
+    } catch (err: any) {
+      console.error('showOptions:', err);
+      Alert.alert('Error', 'No se pudo mostrar opciones');
+    }
+  };
+
   // Carga del usuario almacenado en AsyncStorage (se ejecuta solo al montar el componente)
   useEffect(() => {
     AsyncStorage.getItem('user')
@@ -432,6 +462,9 @@ const searchUsers = () => {
         >
           <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={showOptions}>
+                  <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
+                </TouchableOpacity>
       </View>
     </View>
   );
@@ -562,8 +595,6 @@ const getStyles = (isDarkMode: boolean) =>
       flexDirection: 'column',
       alignItems: 'flex-end',
     },
-<<<<<<< HEAD
+
   });
-=======
-  });
->>>>>>> 76b405a147b4ca78f7f93dd6f5fbbb25e99d9493
+

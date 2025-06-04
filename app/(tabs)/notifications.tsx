@@ -1,5 +1,5 @@
 // notifications.tsx
-// Última edición: 2025-06-03 13:45 – Se incorporó campo `role` y ajustes de botón.
+// Versión actualizada: 2025-06-15 – Agregada función de eliminar notificaciones mediante presión prolongada.
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
@@ -21,21 +21,19 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const API_URL = 'https://myappserve-go.onrender.com';
-const POLLING_INTERVAL = 10000;
 
 type NotificationType = {
   _id: string;
   type: 'offer' | 'friend_request' | 'system';
+  role: 'sender' | 'receiver';
   message: string;
   isRead: boolean;
   status: 'pendiente' | 'aceptada' | 'rechazada';
-  user: string; // ID de quién recibe esta notificación
   partner?: { _id: string; nombre: string; apodo: string };
   friendRequestId?: string;
   amount?: number;
   cards?: Array<{ cardId: string; quantity: number; name?: string; image?: string }>;
   createdAt: string;
-  role: 'sender' | 'receiver'; // <-- campo que vino del backend
 };
 
 enum FilterOption {
@@ -56,7 +54,12 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [filter, setFilter] = useState<FilterOption>(FilterOption.All);
+
+  // Guardamos el ID del usuario actual para distinguir rol (emisor/receptor)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Para saber qué notificación está en "modo borrar" (mostrar basura)
+  const [trashModeId, setTrashModeId] = useState<string | null>(null);
 
   const goHome = () => router.replace('/home');
   const goLibrary = () => router.push('/library');
@@ -92,6 +95,9 @@ export default function NotificationsScreen() {
     }
   };
 
+  /** 
+   * Carga el ID del usuario desde AsyncStorage y luego obtiene notificaciones. 
+   */
   useEffect(() => {
     const loadUserAndFetch = async () => {
       try {
@@ -113,6 +119,9 @@ export default function NotificationsScreen() {
     loadUserAndFetch();
   }, []);
 
+  /**
+   * Obtiene las notificaciones del backend según userId.
+   */
   const fetchNotifications = useCallback(
     async (userId: string) => {
       try {
@@ -131,41 +140,68 @@ export default function NotificationsScreen() {
     []
   );
 
+  /**
+   * Cada vez que la pantalla toma foco, recarga notificaciones.
+   * Ya no usamos setInterval; solo recargamos al enfocarse.
+   */
   useFocusEffect(
     useCallback(() => {
       if (currentUserId) {
         fetchNotifications(currentUserId);
-        const interval = setInterval(() => fetchNotifications(currentUserId), POLLING_INTERVAL);
-        return () => clearInterval(interval);
       }
       return () => {};
     }, [currentUserId, fetchNotifications])
   );
 
+  /**
+   * Marca una notificación como leída en el backend y en el estado local.
+   */
   const markAsRead = async (id: string) => {
     try {
       await fetch(`${API_URL}/notifications/${id}/read`, { method: 'PATCH' });
-      setNotifications(prev =>
-        prev.map(n => (n._id === id ? { ...n, isRead: true } : n))
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
       );
     } catch (err) {
       console.error('markAsRead:', err);
     }
   };
 
+  /**
+   * Elimina una notificación (requiere confirmación).
+   */
+  const deleteNotification = async (id: string) => {
+    try {
+      const res = await fetch(`${API_URL}/notifications/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al eliminar notificación');
+      // Remuevo localmente
+      setNotifications((prev) => prev.filter((n) => n._id !== id));
+    } catch (err: any) {
+      console.error('deleteNotification:', err);
+      Alert.alert('Error', 'No se pudo eliminar la notificación');
+    }
+  };
+
+  /**
+   * Maneja la navegación al pulsar “Ver” o “Ver oferta”.
+   * Si la oferta está pendiente y rol = receiver → abre judge-offer.
+   * En otro caso abre my-offer.
+   * Luego de cualquier acción, recarga la lista.
+   */
   const handlePress = async (noti: NotificationType) => {
     await markAsRead(noti._id);
-    if (!currentUserId) {
-      Alert.alert('Error', 'Usuario no disponible');
-      return;
-    }
 
     if (noti.type === 'offer') {
+      if (!currentUserId) {
+        Alert.alert('Error', 'Usuario no disponible');
+        return;
+      }
+
       const cardsParam = encodeURIComponent(JSON.stringify(noti.cards || []));
       const amountParam = noti.amount != null ? noti.amount.toString() : '0';
 
-      // → Si soy RECEPTOR de oferta pendiente (role === 'receiver' && status === 'pendiente')
-      if (noti.role === 'receiver' && noti.status === 'pendiente') {
+      // RECEPTOR de oferta pendiente → “Ver oferta” → judge-offer.tsx
+      if (noti.status === 'pendiente' && noti.role === 'receiver') {
         const friendNameParam = encodeURIComponent(noti.partner?.apodo ?? '');
         const friendIdParam = noti.partner?._id ?? '';
         router.push(
@@ -179,7 +215,7 @@ export default function NotificationsScreen() {
         return;
       }
 
-      // → En cualquier otro caso (incluyendo quien envió la oferta), ir a historial (my-offer)
+      // En cualquier otro caso → historial (my-offer.tsx)
       const partnerApodo = encodeURIComponent(noti.partner?.apodo ?? '');
       router.push(
         `/my-offer?cards=${cardsParam}` +
@@ -191,34 +227,64 @@ export default function NotificationsScreen() {
     } else if (noti.type === 'system') {
       Alert.alert('Notificación', noti.message);
     }
-    // Las “friend_request” tienen sus propios botones Aceptar/Rechazar
+    // Las “friend_request” usan sus propios botones Aceptar/Rechazar
+
+    // Finalmente, recargo la lista para asegurarme de reflejar cualquier cambio.
+    if (currentUserId) fetchNotifications(currentUserId);
   };
 
+  /**
+   * Construye el texto que se muestra en cada tarjeta de notificación,
+   * usando “Nombre (@apodo)” en lugar de solo apodo.
+   */
   const buildDisplayMessage = (noti: NotificationType): string => {
-    if (noti.type === 'friend_request') return noti.message;
+    if (noti.type === 'friend_request') {
+      // Construimos siempre “Nombre (@apodo)”:
+      if (noti.role === 'receiver') {
+        // Receptor recibe “Nueva solicitud de amistad de [nombre(@apodo)]”
+        return `Nueva solicitud de amistad de ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
+      } else {
+        // Emisor ve “Enviaste una solicitud a [nombre(@apodo)]”
+        return `Enviaste una solicitud a ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
+      }
+    }
 
-    if (noti.role === 'receiver' && noti.status === 'pendiente') {
-      return `Has recibido una oferta de ${noti.partner?.apodo ?? ''}`;
+    // Para ofertas:
+    // 1) Si rol = receiver y estado pendiente → “Has recibido una oferta de [Nombre (@apodo)]”
+    if (noti.status === 'pendiente' && noti.role === 'receiver') {
+      return `Has recibido una oferta de ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
     }
-    if (noti.role === 'sender' && noti.status === 'pendiente') {
-      return `Esperando respuesta de ${noti.partner?.apodo ?? ''}`;
+
+    // 2) Si rol = sender y estado pendiente → “Esperando respuesta de [Nombre (@apodo)]”
+    if (noti.status === 'pendiente' && noti.role === 'sender') {
+      return `Esperando respuesta de ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
     }
-    if (noti.role === 'sender' && noti.status !== 'pendiente') {
+
+    // 3) Oferta aceptada/rechazada:
+    //    • Si rol = sender → “Tu oferta fue [aceptada/rechazada] por [Nombre (@apodo)]”
+    if (noti.status !== 'pendiente' && noti.role === 'sender') {
       const verbo = noti.status === 'aceptada' ? 'aceptada' : 'rechazada';
-      return `Tu oferta fue ${verbo} por ${noti.partner?.apodo ?? ''}`;
+      return `Tu oferta fue ${verbo} por ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
     }
-    if (noti.role === 'receiver' && noti.status !== 'pendiente') {
+
+    //    • Si rol = receiver → “Has [aceptado/rechazado] la oferta de [Nombre (@apodo)]”
+    if (noti.status !== 'pendiente' && noti.role === 'receiver') {
       const verbo = noti.status === 'aceptada' ? 'aceptado' : 'rechazado';
-      return `Has ${verbo} la oferta de ${noti.partner?.apodo ?? ''}`;
+      return `Has ${verbo} la oferta de ${noti.partner?.nombre} (@${noti.partner?.apodo})`;
     }
+
+    // Si no encaja en ningún caso, devolvemos el mensaje crudo:
     return noti.message;
   };
 
   const filteredNotifications = useMemo(
     () =>
-      notifications.filter(noti => {
-        const display = buildDisplayMessage(noti).toLowerCase();
-        if (!display.includes(search.toLowerCase())) return false;
+      notifications.filter((noti) => {
+        const textMatch =
+          noti.message.toLowerCase().includes(search.toLowerCase()) ||
+          (noti.partner?.apodo || '').toLowerCase().includes(search.toLowerCase()) ||
+          (noti.partner?.nombre || '').toLowerCase().includes(search.toLowerCase());
+        if (!textMatch) return false;
         switch (filter) {
           case FilterOption.Pendiente:
             return noti.status === 'pendiente';
@@ -245,12 +311,21 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          styles.searchContainer,
+          { paddingBottom: 80 }, // <-- espacio extra para que la última notificación no quede tapada
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Input de búsqueda */}
         <TextInput
           style={[
             styles.searchInput,
-            { color: isDarkMode ? '#fff' : '#000', borderColor: isDarkMode ? '#555' : '#ccc' },
+            {
+              color: isDarkMode ? '#fff' : '#000',
+              borderColor: isDarkMode ? '#555' : '#ccc',
+            },
           ]}
           placeholder="Buscar..."
           placeholderTextColor={isDarkMode ? '#888' : '#666'}
@@ -265,7 +340,7 @@ export default function NotificationsScreen() {
           contentContainerStyle={styles.filterContainer}
           nestedScrollEnabled
         >
-          {Object.values(FilterOption).map(opt => (
+          {Object.values(FilterOption).map((opt) => (
             <TouchableOpacity
               key={opt}
               style={[styles.filterButton, filter === opt && styles.filterButtonActive]}
@@ -277,17 +352,33 @@ export default function NotificationsScreen() {
         </ScrollView>
 
         {/* Lista de notificaciones */}
-        {filteredNotifications.map(noti => {
+        {filteredNotifications.map((noti) => {
+          const isFriendRequest = noti.type === 'friend_request';
+          const isPending = noti.status === 'pendiente';
+          const isReceivedRequest =
+            isFriendRequest &&
+            isPending &&
+            noti.role === 'receiver';
+
+          // Texto a mostrar con “Nombre (@apodo)”
           const displayMessage = buildDisplayMessage(noti);
-          const rolTexto = noti.role === 'receiver' ? 'Rol: Receptor' : 'Rol: Emisor';
+
+          // Ocultamos el botón “Ver” si soy EMISOR en notificación de solicitud
+          const hideViewButtonForFriendSender =
+            isFriendRequest && noti.role === 'sender';
 
           return (
-            <View
+            <TouchableOpacity
               key={noti._id}
               style={[
                 styles.notificationBox,
                 noti.isRead ? null : { borderWidth: 1, borderColor: '#6A0DAD' },
               ]}
+              activeOpacity={0.9}
+              onLongPress={() => {
+                // Al presionar prolongado, activamos el modo "mostrar basura" para esta notificación
+                setTrashModeId((prev) => (prev === noti._id ? null : noti._id));
+              }}
             >
               <View style={styles.textContainer}>
                 <Text style={[styles.title, { color: isDarkMode ? '#fff' : '#000' }]}>
@@ -296,26 +387,103 @@ export default function NotificationsScreen() {
                 <Text style={[styles.status, { color: isDarkMode ? '#bbb' : '#555' }]}>
                   Estado: {noti.status.charAt(0).toUpperCase() + noti.status.slice(1)}
                 </Text>
-                {/* Indicador de rol */}
-                <Text style={[styles.roleText, { color: isDarkMode ? '#bbb' : '#555' }]}>
-                  {rolTexto}
+                <Text style={[styles.roleText, { color: isDarkMode ? '#aaa' : '#444' }]}>
+                  Rol: {noti.role === 'receiver' ? 'Receptor' : 'Emisor'}
                 </Text>
                 <Text style={[styles.date, { color: isDarkMode ? '#888' : '#666' }]}>
                   {new Date(noti.createdAt).toLocaleDateString()}
                 </Text>
               </View>
 
-              {/* Botón “Ver oferta” sólo si soy receiver y status = pendiente */}
-              {! (noti.type === 'friend_request') && (
-                <TouchableOpacity style={styles.viewButton} onPress={() => handlePress(noti)}>
-                  <Text style={styles.viewText}>
-                    {noti.type === 'offer' && noti.role === 'receiver' && noti.status === 'pendiente'
-                      ? 'Ver oferta'
-                      : 'Ver'}
-                  </Text>
+              {/* Si la notificación está en trashMode, mostramos ícono de basurero */}
+              {trashModeId === noti._id ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      'Eliminar notificación',
+                      '¿Estás seguro de eliminar esta notificación?',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Eliminar',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await deleteNotification(noti._id);
+                            setTrashModeId(null);
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={24}
+                    color={isDarkMode ? '#f55' : '#900'}
+                  />
                 </TouchableOpacity>
+              ) : (
+                // Si no estamos en trashMode, renderizamos botones normales
+                <View style={styles.buttonsContainer}>
+                  {/* Botones para solicitud de amistad */}
+                  {isReceivedRequest && (
+                    <View style={styles.friendButtonsContainer}>
+                      <TouchableOpacity
+                        style={styles.acceptButton}
+                        onPress={async () => {
+                          await acceptFriendRequest(noti);
+                          if (currentUserId) fetchNotifications(currentUserId);
+                        }}
+                      >
+                        <Text style={styles.buttonText}>Aceptar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.rejectButton}
+                        onPress={async () => {
+                          await rejectFriendRequest(noti);
+                          if (currentUserId) fetchNotifications(currentUserId);
+                        }}
+                      >
+                        <Text style={styles.buttonText}>Rechazar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Si ya se aceptó la solicitud */}
+                  {isFriendRequest && noti.status === 'aceptada' && (
+                    <TouchableOpacity style={styles.friendsButton} disabled>
+                      <Text style={styles.buttonText}>Amigos</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Si ya se rechazó la solicitud */}
+                  {isFriendRequest && noti.status === 'rechazada' && (
+                    <TouchableOpacity style={styles.rejectedButton} disabled>
+                      <Text style={styles.buttonText}>Rechazada</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Botón para ofertas y sistema */}
+                  {!isFriendRequest && (
+                    <TouchableOpacity
+                      style={styles.viewButton}
+                      onPress={async () => {
+                        await handlePress(noti);
+                      }}
+                    >
+                      <Text style={styles.viewText}>
+                        {noti.type === 'offer' && noti.role === 'receiver' && noti.status === 'pendiente'
+                          ? 'Ver oferta'
+                          : 'Ver'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Reserva espacio si ocultamos el botón “Ver” */}
+                  {isFriendRequest && hideViewButtonForFriendSender && <View style={styles.spacer} />}
+                </View>
               )}
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>
@@ -324,6 +492,9 @@ export default function NotificationsScreen() {
       <View style={styles.bottomBar}>
         <TouchableOpacity style={styles.iconButton} onPress={goLibrary}>
           <Ionicons name="book-outline" size={24} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/friends')}>
+          <Ionicons name="people-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={goHome}>
           <Image
@@ -337,6 +508,38 @@ export default function NotificationsScreen() {
       </View>
     </View>
   );
+}
+
+// Función para aceptar solicitud de amistad
+async function acceptFriendRequest(noti: NotificationType) {
+  if (!noti.friendRequestId) {
+    Alert.alert('Error', 'No se encontró el ID de la solicitud');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/friend-request/${noti.friendRequestId}/accept`, { method: 'POST' });
+    if (!res.ok) throw new Error('Error al aceptar solicitud');
+    Alert.alert('Éxito', 'Solicitud aceptada');
+  } catch (err: any) {
+    console.error('acceptFriendRequest:', err);
+    Alert.alert('Error', 'Error al aceptar solicitud');
+  }
+}
+
+// Función para rechazar solicitud de amistad
+async function rejectFriendRequest(noti: NotificationType) {
+  if (!noti.friendRequestId) {
+    Alert.alert('Error', 'No se encontró el ID de la solicitud');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/friend-request/${noti.friendRequestId}/reject`, { method: 'POST' });
+    if (!res.ok) throw new Error('Error al rechazar solicitud');
+    Alert.alert('Información', 'Solicitud rechazada');
+  } catch (err: any) {
+    console.error('rejectFriendRequest:', err);
+    Alert.alert('Error', 'Error al rechazar solicitud');
+  }
 }
 
 const getStyles = (isDarkMode: boolean) =>
@@ -399,7 +602,7 @@ const getStyles = (isDarkMode: boolean) =>
     },
     status: {
       fontSize: 14,
-      marginBottom: 2,
+      marginBottom: 4,
     },
     roleText: {
       fontSize: 12,
@@ -410,15 +613,55 @@ const getStyles = (isDarkMode: boolean) =>
       fontSize: 12,
       color: isDarkMode ? '#888' : '#666',
     },
+    buttonsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    friendButtonsContainer: {
+      flexDirection: 'row',
+    },
+    acceptButton: {
+      backgroundColor: '#388E3C',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      marginRight: 4,
+    },
+    rejectButton: {
+      backgroundColor: '#D32F2F',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+    },
+    friendsButton: {
+      backgroundColor: '#6A0DAD',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+    },
+    rejectedButton: {
+      backgroundColor: '#D32F2F',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+    },
+    buttonText: {
+      color: '#fff',
+      fontWeight: '600',
+    },
     viewButton: {
       backgroundColor: '#6A0DAD',
       paddingVertical: 8,
       paddingHorizontal: 16,
       borderRadius: 6,
+      marginLeft: 4,
     },
     viewText: {
       color: '#fff',
       fontWeight: '600',
+    },
+    spacer: {
+      width: 0, // Usado para mantener consistencia (sin botón "Ver")
     },
     bottomBar: {
       position: 'absolute',

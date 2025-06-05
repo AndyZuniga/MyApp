@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,9 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: importar Ionicons para mostrar/ocultar contraseña
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+
 const { width } = Dimensions.get('window');
 
 export default function RegisterScreen() {
@@ -28,32 +29,48 @@ export default function RegisterScreen() {
   const [apodo, setApodo] = useState('');
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // 🔴 CAMBIO: estado para mostrar/ocultar contraseña
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
   const [errorApodo, setErrorApodo] = useState('');
   const [errorCorreo, setErrorCorreo] = useState('');
   const [errorPassword, setErrorPassword] = useState('');
+  const [errorConfirmPassword, setErrorConfirmPassword] = useState('');
 
-  // 🟢 Enviar solicitud de registro y esperar verificación por correo
+  // Determina si el formulario es válido: todos los campos no están vacíos y las contraseñas coinciden
+  const isFormValid = useMemo(() => {
+    return (
+      nombre.trim().length > 0 &&
+      apellido.trim().length > 0 &&
+      apodo.trim().length > 0 &&
+      correo.trim().length > 0 &&
+      password.length > 0 &&
+      confirmPassword.length > 0 &&
+      password === confirmPassword
+    );
+  }, [nombre, apellido, apodo, correo, password, confirmPassword]);
+
   const registrarUsuario = async () => {
-    if (!nombre || !apellido || !apodo || !correo || !password) {
-      Alert.alert('Campos incompletos', 'Por favor, completa todos los campos.');
+    if (!isFormValid) {
+      Alert.alert('Formulario inválido', 'Asegúrate de completar todos los campos y de que las contraseñas coincidan.');
       return;
     }
 
-    // 🔴 Validación de contraseña
+    // Validación de contraseña: al menos 8 caracteres y 1 mayúscula
     const passwordValida = /^(?=.*[A-Z]).{8,}$/.test(password);
     if (!passwordValida) {
       setErrorPassword('La contraseña debe tener al menos 8 caracteres y 1 mayúscula');
       return;
     }
 
-    // 🔴 Limpiar errores previos
+    // Si llega aquí, las contraseñas ya coinciden; no es estrictamente necesario duplicar la validación, pero puede quedarte claro
     setErrorApodo('');
     setErrorCorreo('');
     setErrorPassword('');
+    setErrorConfirmPassword('');
 
     try {
       setCargando(true);
@@ -68,7 +85,6 @@ export default function RegisterScreen() {
       const data = await response.json();
 
       if (!response.ok) {
-        // 🔴 Mostrar errores específicos
         if (data.error?.includes('apodo')) {
           setErrorApodo(data.error);
         } else if (data.error?.includes('correo')) {
@@ -121,12 +137,10 @@ export default function RegisterScreen() {
           value={apodo}
           onChangeText={(text) => {
             setApodo(text);
-            if (errorApodo) setErrorApodo(''); // 🔴 Limpiar error automáticamente
+            if (errorApodo) setErrorApodo('');
           }}
         />
-        {errorApodo !== '' && (
-          <Text style={styles.errorText}>{errorApodo}</Text>
-        )}
+        {errorApodo !== '' && <Text style={styles.errorText}>{errorApodo}</Text>}
 
         <TextInput
           style={styles.input}
@@ -137,14 +151,12 @@ export default function RegisterScreen() {
           value={correo}
           onChangeText={(text) => {
             setCorreo(text);
-            if (errorCorreo) setErrorCorreo(''); // 🔴 Limpiar error automáticamente
+            if (errorCorreo) setErrorCorreo('');
           }}
         />
-        {errorCorreo !== '' && (
-          <Text style={styles.errorText}>{errorCorreo}</Text>
-        )}
+        {errorCorreo !== '' && <Text style={styles.errorText}>{errorCorreo}</Text>}
 
-        {/* 🔴 CAMBIO: Input de contraseña con ojo para mostrar/ocultar */}
+        {/* Campo Contraseña */}
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
@@ -154,7 +166,9 @@ export default function RegisterScreen() {
             value={password}
             onChangeText={(text) => {
               setPassword(text);
-              if (errorPassword) setErrorPassword(''); // 🔴 Limpiar error automáticamente
+              if (errorPassword) setErrorPassword('');
+              // Si ya había un error de confirmación, lo limpiamos para revalidar
+              if (errorConfirmPassword) setErrorConfirmPassword('');
             }}
           />
           <TouchableOpacity
@@ -168,29 +182,61 @@ export default function RegisterScreen() {
             />
           </TouchableOpacity>
         </View>
-        {errorPassword !== '' && (
-          <Text style={styles.errorText}>{errorPassword}</Text>
+        {errorPassword !== '' && <Text style={styles.errorText}>{errorPassword}</Text>}
+
+        {/* Campo Confirmar Contraseña */}
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Confirmar contraseña"
+            placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
+            secureTextEntry={!showConfirm}
+            value={confirmPassword}
+            onChangeText={(text) => {
+              setConfirmPassword(text);
+              if (errorConfirmPassword) setErrorConfirmPassword('');
+            }}
+          />
+          <TouchableOpacity
+            onPress={() => setShowConfirm((v) => !v)}
+            style={styles.eyeButton}
+          >
+            <Ionicons
+              name={showConfirm ? 'eye' : 'eye-off'}
+              size={24}
+              color={isDarkMode ? '#fff' : '#000'}
+            />
+          </TouchableOpacity>
+        </View>
+        {confirmPassword.length > 0 && password !== confirmPassword && (
+          <Text style={styles.errorText}>Las contraseñas no coinciden</Text>
+        )}
+        {errorConfirmPassword !== '' && (
+          <Text style={styles.errorText}>{errorConfirmPassword}</Text>
         )}
 
         <TouchableOpacity
-          style={styles.loginButton}
+          style={[
+            styles.loginButton,
+            {
+              backgroundColor: isFormValid ? '#6A0DAD' : '#999',
+            },
+          ]}
           onPress={registrarUsuario}
-          disabled={cargando}
+          disabled={!isFormValid || cargando}
         >
           <Text style={styles.loginText}>
             {cargando ? 'Registrando...' : 'Registrarse'}
           </Text>
         </TouchableOpacity>
 
-        {/* 🔵 Modal para aviso de verificación por correo */}
-        <Modal
-          visible={modalVisible}
-          animationType="slide"
-          transparent
-        >
+        {/* Modal para aviso de verificación por correo */}
+        <Modal visible={modalVisible} animationType="slide" transparent>
           <View style={styles.modalContainer}>
             <View style={styles.modalBox}>
-              <Text style={styles.modalText}>Se ha enviado un enlace de verificación a:</Text>
+              <Text style={styles.modalText}>
+                Se ha enviado un enlace de verificación a:
+              </Text>
               <Text style={styles.modalEmail}>{correo}</Text>
 
               <TouchableOpacity
@@ -233,7 +279,6 @@ const getStyles = (isDarkMode: boolean) =>
       marginBottom: 16,
       fontSize: 16,
     },
-    // 🔴 estilos para contenedor de contraseña en register
     passwordContainer: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -256,7 +301,6 @@ const getStyles = (isDarkMode: boolean) =>
     },
     loginButton: {
       width: '100%',
-      backgroundColor: '#6A0DAD',
       paddingVertical: 14,
       borderRadius: 6,
       alignItems: 'center',

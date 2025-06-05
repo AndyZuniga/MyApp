@@ -12,9 +12,9 @@ import {
   useColorScheme,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔴 CAMBIO: importar AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔴 CAMBIO: seguimos importando AsyncStorage
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; // 🔴 CAMBIO: iconos de ojo
+import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
@@ -29,16 +29,17 @@ export default function LoginScreen() {
   const [cargando, setCargando] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🔴 CAMBIO: al montar, comprueba si hay sesión guardada
+  // 🔴 CAMBIO: al montar, comprueba si hay sesión guardada (usuario + token)
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const stored = await AsyncStorage.getItem('user');
-        if (stored !== null) {
-          // 🔴 CAMBIO: navegar directo a Home pasando usuario almacenado
+        const rawUser = await AsyncStorage.getItem('user');
+        const storedToken = await AsyncStorage.getItem('token');
+        if (rawUser && storedToken) {
+          // Si hay usuario + token, navegamos directo a Home
           router.replace({
             pathname: '/home',
-            params: { usuario: stored },
+            params: { usuario: rawUser },
           });
         }
       } catch (e) {
@@ -57,22 +58,25 @@ export default function LoginScreen() {
     try {
       setCargando(true);
       const response = await fetch('https://myappserve-go.onrender.com/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ correo, password }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al iniciar sesión');
-      }
-
-      // 🔴 CAMBIO: guardar sesión en AsyncStorage
-      await AsyncStorage.setItem('user', JSON.stringify(data.usuario));
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ correo, password }),
+});
+const data = await response.json();
+if (!response.ok) {
+  throw new Error(data.error || 'Error al iniciar sesión');
+}
+const { token, usuario } = data;
+if (!token) {
+  throw new Error('El servidor no devolvió token');
+}
+await AsyncStorage.setItem('user', JSON.stringify(usuario));
+await AsyncStorage.setItem('token', token);
 
       // 🔴 CAMBIO: navegar a Home pasando el usuario completo
       router.replace({
         pathname: '/home',
-        params: { usuario: JSON.stringify(data.usuario) },
+        params: { usuario: JSON.stringify(usuario) },
       });
     } catch (error: any) {
       Alert.alert('Error de inicio de sesión', error.message);

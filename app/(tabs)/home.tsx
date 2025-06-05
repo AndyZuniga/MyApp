@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// home.tsx
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,20 +10,31 @@ import {
   useColorScheme,
   Alert,
   Image,
-  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { io } from 'socket.io-client';
+import { apiFetch } from '../../utils/apiFetch'; 
 
 export default function HomeScreen() {
   const router = useRouter();
   const [userObj, setUserObj] = useState<any>(null);
-  useEffect(() => {
-    AsyncStorage.getItem('user').then((data) => {
-      if (data) setUserObj(JSON.parse(data));
-    });
-  }, []);
+  const [token, setToken] = useState<string | null>(null);
+
+  // Recupera usuario y token de AsyncStorage
+// Aúltima versión de home.tsx que te compartí incluye:
+
+useEffect(() => {
+  const loadSession = async () => {
+    const rawUser = await AsyncStorage.getItem('user');
+    const rawToken = await AsyncStorage.getItem('token');
+    if (rawUser) setUserObj(JSON.parse(rawUser));
+    if (rawToken) setToken(rawToken);
+  };
+  loadSession();
+}, []);
+
 
   const isDarkMode = useColorScheme() === 'dark';
   const styles = getStyles(isDarkMode);
@@ -35,8 +47,8 @@ export default function HomeScreen() {
   const [selectedSet, setSelectedSet] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
 
-  // IDs de sets que contienen cartas de la categoría seleccionada
-  const [categorySetIds, setCategorySetIds] = useState<Set<string>>(new Set());
+  // Badge contador de notificaciones no leídas
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Opciones de categoría
   const categoryOptions = [
@@ -46,18 +58,14 @@ export default function HomeScreen() {
     { label: 'Estadio', value: 'Stadium' },
   ];
 
-  // Carga de sets desde API, ordenados por fecha descendente
+  // Carga de sets desde API pública
   const [sets, setSets] = useState<any[]>([]);
   useEffect(() => {
     (async () => {
       try {
         const resp = await fetch('https://api.pokemontcg.io/v2/sets');
         const json = await resp.json();
-        const sorted = (json.data || []).sort(
-          (a: any, b: any) =>
-            new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime()
-        );
-        setSets(sorted);
+        setSets(json.data || []);
       } catch (e) {
         console.error('Error al cargar sets:', e);
       }
@@ -82,107 +90,62 @@ export default function HomeScreen() {
   const [library, setLibrary] = useState<{ cardId: string; quantity: number }[]>([]);
   useEffect(() => {
     if (!userObj) return;
-    fetch(`https://myappserve-go.onrender.com/library?userId=${userObj.id}`)
-      .then((r) => r.json())
-      .then((data) => setLibrary(data.library))
+    apiFetch(`/library?userId=${userObj.id}`, {
+      method: 'GET',
+    })
+      .then(r => r.json())
+      .then(data => setLibrary(data.library))
       .catch(console.error);
   }, [userObj]);
 
-  /**
-   * Cada vez que cambie selectedCategory (y no haya texto en searchTerm),
-   * ejecuta un query a la API filtrando por supertype/subtype apropiados,
-   * y recolecta los set.id de todas las cartas resultantes.
-   */
-  useEffect(() => {
-    const fetchSetsByCategory = async () => {
-      if (selectedCategory && !searchTerm.trim()) {
-        setLoading(true);
-        try {
-          // Construir query exacto según la categoría
-          let query = '';
-          switch (selectedCategory) {
-            case 'Item':
-              query = `supertype:Trainer subtype:"Item"`;
-              break;
-            case 'Trainer':
-              query = `supertype:Trainer`;
-              break;
-            case 'Pokémon Tool':
-              query = `supertype:Trainer subtype:"Pokémon Tool"`;
-              break;
-            case 'Stadium':
-              query = `supertype:Trainer subtype:Stadium`;
-              break;
-            default:
-              query = '';
-          }
-          const q = encodeURIComponent(query);
-          // Pedimos hasta 250 cartas para abarcar la mayoría de sets
-          const resp = await fetch(
-            `https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=250`
-          );
-          const json = await resp.json();
-          const ids = new Set<string>();
-          (json.data || []).forEach((c: any) => {
-            if (c.set?.id) ids.add(c.set.id);
-          });
-          setCategorySetIds(ids);
-          // Limpiar selección de set y tipo
-          setSelectedSet(null);
-          setSelectedType(null);
-          setCards([]); // vaciar lista de cartas para que aparezcan sets
-        } catch (e) {
-          Alert.alert('Error', 'No se pudo filtrar por categoría.');
-          console.error(e);
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Si se quita la categoría, vaciamos IDs
-        setCategorySetIds(new Set());
-      }
-    };
-    fetchSetsByCategory();
-  }, [selectedCategory, searchTerm]);
+  // Función para obtener la cantidad de notificaciones no leídas
+  const fetchUnreadCount = useCallback(async () => {
+    if (!userObj) return;
+    try {
+      const res = await apiFetch(
+        `/notifications?userId=${userObj.id}&isRead=false`,
+        { method: 'GET' }
+      );
+      if (!res.ok) throw new Error('Error al obtener notificaciones');
+      const data = await res.json();
+      setUnreadCount(Array.isArray(data.notifications) ? data.notifications.length : 0);
+    } catch (err) {
+      console.error('fetchUnreadCount:', err);
+    }
+  }, [userObj]);
 
-  /**
-   * Cada vez que cambie selectedSet (y no haya texto en searchTerm),
-   * obtenemos todas las cartas de ese set.
-   */
+  // Conectar WebSocket y suscribirse a notificaciones en tiempo real
   useEffect(() => {
-    const fetchBySet = async () => {
-      if (selectedSet && !searchTerm.trim()) {
-        setLoading(true);
-        try {
-          const resp = await fetch(
-            `https://api.pokemontcg.io/v2/cards?q=set.id:"${selectedSet}"`
-          );
-          const json = await resp.json();
-          setCards(json.data || []);
-          // Limpiar demás filtros
-          setSelectedCategory(null);
-          setSelectedType(null);
-        } catch (e) {
-          Alert.alert('Error', 'No se pudo cargar las cartas del set.');
-          console.error(e);
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-    fetchBySet();
-  }, [selectedSet, searchTerm]);
+    if (!userObj?.id || !token) return;
 
-  /**
-   * Búsqueda libre por nombre de carta (cuando hay texto en el TextInput).
-   */
+    const socket = io('https://myappserve-go.onrender.com', {
+      auth: { token },
+      transports: ['websocket'],
+    });
+
+    socket.emit('registerUser', userObj.id);
+
+    socket.on('newNotification', () => {
+      fetchUnreadCount();
+    });
+
+    // Inicialmente obtener el conteo
+    fetchUnreadCount();
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [userObj, token, fetchUnreadCount]);
+
+  // Función de búsqueda por nombre
   const buscarCarta = async () => {
     const raw = searchTerm.trim();
     if (!raw) {
-      setCards([]);
+      // Si el término está vacío, restablece estados relacionados
       setSelectedCategory(null);
       setSelectedSet(null);
       setSelectedType(null);
+      setCards([]);
       return;
     }
     setLoading(true);
@@ -195,9 +158,10 @@ export default function HomeScreen() {
       const resp = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}`);
       const json = await resp.json();
       setCards(json.data || []);
+      // Cuando se busca por nombre, reiniciar filtros de set y tipo
       setSelectedSet(null);
-      setSelectedCategory(null);
       setSelectedType(null);
+      setSelectedCategory(null);
     } catch (e) {
       Alert.alert('Error', 'No se pudo obtener las cartas.');
       console.error(e);
@@ -206,62 +170,58 @@ export default function HomeScreen() {
     }
   };
 
-  /**
-   * Filtrado dinámico de sets a mostrar:
-   * 1) Si hay searchTerm → solo los sets que contienen cartas del resultado de esa búsqueda.
-   * 2) Si hay selectedCategory → solo los sets cuyo ID esté en categorySetIds.
-   * 3) En otro caso, todos los sets ya ordenados por fecha.
-   */
-  const availableSets = (() => {
-    if (searchTerm.trim()) {
-      return sets.filter((s) => cards.some((c) => c.set?.id === s.id));
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Nuevo useEffect: si se selecciona un set y NO hay término de búsqueda,
+  // descargar todas las cartas de ese set.
+  useEffect(() => {
+    const raw = searchTerm.trim();
+    if (selectedSet && !raw) {
+      setLoading(true);
+      // Query para obtener todas las cartas cuyo set.id coincida
+      const qSet = encodeURIComponent(`set.id:"${selectedSet}"`);
+      fetch(`https://api.pokemontcg.io/v2/cards?q=${qSet}`)
+        .then(res => res.json())
+        .then(json => {
+          setCards(json.data || []);
+          // Restablecer filtros de categoría y tipo al seleccionar un set
+          setSelectedCategory(null);
+          setSelectedType(null);
+        })
+        .catch(e => {
+          Alert.alert('Error', 'No se pudo obtener las cartas del set seleccionado.');
+          console.error(e);
+        })
+        .finally(() => setLoading(false));
+    } else if (!selectedSet && !raw) {
+      // Si se deselecciona el set y no hay búsqueda, limpiar lista de cartas
+      setCards([]);
     }
-    if (selectedCategory) {
-      return sets.filter((s) => categorySetIds.has(s.id));
-    }
-    return sets;
-  })();
+  }, [selectedSet, searchTerm]);
+  // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Filtrado dinámico de tipos de energía:
-   * - Si hay searchTerm → solo los tipos que aparecen en las cartas buscadas.
-   * - Si no, todos.
-   */
+  // Lógica filtros dinámicos
+  const availableSets = !searchTerm.trim()
+    ? sets
+    : sets.filter(s => cards.some(c => c.set?.id === s.id));
+
   const availableTypes = !searchTerm.trim()
     ? energyTypes
-    : energyTypes.filter((et) =>
-        cards.some(
-          (c) => Array.isArray(c.types) && c.types.includes(et.type)
-        )
-      );
+    : energyTypes.filter(et => cards.some(c => Array.isArray(c.types) && c.types.includes(et.type)));
 
-  /**
-   * Cartas finales a mostrar en pantalla:
-   * - Filtrar por categoría (solo si se mantiene seleccionada y no hay searchTerm).
-   * - Filtrar por set (si se ha seleccionado uno).
-   * - Filtrar por tipo (si se ha seleccionado uno).
-   */
   const filteredCards = cards
-    .filter((c) => {
-      if (!selectedCategory) return true;
-      if (selectedCategory === 'Trainer') return c.supertype === 'Trainer';
-      if (selectedCategory === 'Item')
-        return Array.isArray(c.subtypes) && c.subtypes.includes('Item');
-      if (selectedCategory === 'Pokémon Tool')
-        return Array.isArray(c.subtypes) && c.subtypes.includes('Pokémon Tool');
-      if (selectedCategory === 'Stadium')
-        return Array.isArray(c.subtypes) && c.subtypes.includes('Stadium');
-      return true;
-    })
-    .filter((c) => (!selectedSet ? true : c.set?.id === selectedSet))
-    .filter((c) => (!selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)));
+    .filter(c =>
+      !selectedCategory
+        ? true
+        : selectedCategory === 'Trainer'
+        ? c.supertype === 'Trainer'
+        : Array.isArray(c.subtypes) && c.subtypes.includes(selectedCategory)
+    )
+    .filter(c => (!selectedSet ? true : c.set?.id === selectedSet))
+    .filter(c => (!selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)));
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.searchContainer}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
         {/* Filtro Categoría */}
         <ScrollView
           horizontal
@@ -269,16 +229,11 @@ export default function HomeScreen() {
           contentContainerStyle={styles.categoryFilterContainer}
           nestedScrollEnabled
         >
-          {categoryOptions.map((opt) => (
+          {categoryOptions.map(opt => (
             <TouchableOpacity
               key={opt.value}
-              style={[
-                styles.categoryButton,
-                selectedCategory === opt.value && styles.categoryButtonSelected,
-              ]}
-              onPress={() =>
-                setSelectedCategory((prev) => (prev === opt.value ? null : opt.value))
-              }
+              style={[styles.categoryButton, selectedCategory === opt.value && styles.categoryButtonSelected]}
+              onPress={() => setSelectedCategory(prev => (prev === opt.value ? null : opt.value))}
             >
               <Text style={[styles.categoryLabel, { color: isDarkMode ? '#fff' : '#000' }]}>
                 {opt.label}
@@ -294,11 +249,16 @@ export default function HomeScreen() {
           contentContainerStyle={styles.setFilterContainer}
           nestedScrollEnabled
         >
-          {availableSets.map((set) => (
+          {availableSets.map(set => (
             <TouchableOpacity
               key={set.id}
               style={[styles.setButton, selectedSet === set.id && styles.setButtonSelected]}
-              onPress={() => setSelectedSet((prev) => (prev === set.id ? null : set.id))}
+              onPress={() => {
+                // Alternar selección de set
+                setSelectedSet(prev => (prev === set.id ? null : set.id));
+                // Borrar término de búsqueda si se elige set
+                setSearchTerm('');
+              }}
             >
               <Image source={{ uri: set.images.logo }} style={styles.setIcon} />
             </TouchableOpacity>
@@ -316,21 +276,27 @@ export default function HomeScreen() {
             <TouchableOpacity
               key={type}
               style={[styles.typeButton, selectedType === type && styles.typeButtonSelected]}
-              onPress={() => setSelectedType((prev) => (prev === type ? null : type))}
+              onPress={() => setSelectedType(prev => (prev === type ? null : type))}
             >
               <Image source={icon} style={styles.typeIcon} />
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        {/* Barra de búsqueda local */}
+        {/* Barra de búsqueda */}
         <View style={styles.searchLocalContainer}>
           <TextInput
             style={styles.inputLocal}
             placeholder="Buscar en mi biblioteca"
             placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
             value={searchTerm}
-            onChangeText={setSearchTerm}
+            onChangeText={text => {
+              // Al cambiar el término, limpiar selección de set
+              setSearchTerm(text);
+              if (text.trim()) {
+                setSelectedSet(null);
+              }
+            }}
             returnKeyType="search"
             onSubmitEditing={buscarCarta}
           />
@@ -339,12 +305,9 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Spinner mientras carga datos */}
-        {loading && <ActivityIndicator size="large" color={isDarkMode ? '#fff' : '#000'} />}
-
         {/* Mostrar cartas filtradas */}
-        {filteredCards.map((card) => {
-          const qty = library.find((e) => e.cardId === card.id)?.quantity || 0;
+        {filteredCards.map(card => {
+          const qty = library.find(e => e.cardId === card.id)?.quantity || 0;
           return (
             <View key={card.id} style={styles.cardBox}>
               {qty > 0 && (
@@ -352,19 +315,15 @@ export default function HomeScreen() {
                   <Text style={styles.counterText}>{qty}</Text>
                 </View>
               )}
-              {/* Botón para quitar de la biblioteca */}
+              {/* Botón para remover carta */}
               <TouchableOpacity
                 style={styles.iconCircleLeft}
                 onPress={async () => {
                   try {
-                    const res = await fetch(
-                      'https://myappserve-go.onrender.com/library/remove',
-                      {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
-                      }
-                    );
+                    const res = await apiFetch('/library/remove', {
+                      method: 'POST',
+                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+                    });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error);
                     setLibrary(data.library);
@@ -376,27 +335,21 @@ export default function HomeScreen() {
                 <Ionicons name="remove" size={16} color="#fff" />
               </TouchableOpacity>
 
-              {/* Botón para agregar a la biblioteca */}
+              {/* Botón para agregar carta */}
               <TouchableOpacity
                 style={styles.iconCircle}
                 onPress={async () => {
                   try {
-                    const res = await fetch(
-                      'https://myappserve-go.onrender.com/library/add',
-                      {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
-                      }
-                    );
+                    const res = await apiFetch('/library/add', {
+                      method: 'POST',
+                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+                    });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.error);
                     setLibrary(data.library);
                     Alert.alert(
                       'Añadido',
-                      `Ahora tienes ${
-                        data.library.find((e: any) => e.cardId === card.id).quantity
-                      } de esta carta.`
+                      `Ahora tienes ${data.library.find((e: any) => e.cardId === card.id).quantity} de esta carta.`
                     );
                   } catch (e: any) {
                     Alert.alert('Error', e.message);
@@ -430,6 +383,8 @@ export default function HomeScreen() {
         <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/friends')}>
           <Ionicons name="people-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
+
+        {/* Ícono de notificaciones con badge */}
         <TouchableOpacity
           style={styles.iconButton}
           onPress={async () => {
@@ -442,8 +397,16 @@ export default function HomeScreen() {
             }
           }}
         >
-          <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+          <View>
+            <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.iconButton}
           onPress={() => {
@@ -454,7 +417,7 @@ export default function HomeScreen() {
                   userObj &&
                   Alert.alert(
                     'Datos de usuario',
-                    `Apodo: ${userObj.apodo}\nCorreo: ${userObj.correo}`
+                    `${userObj.nombre} ${userObj.apellido}\nApdodo: ${userObj.apodo}\nCorreo: ${userObj.correo}`
                   ),
               },
               {
@@ -462,6 +425,7 @@ export default function HomeScreen() {
                 style: 'destructive',
                 onPress: async () => {
                   await AsyncStorage.removeItem('user');
+                  await AsyncStorage.removeItem('token');
                   router.replace('/login');
                 },
               },
@@ -479,12 +443,7 @@ export default function HomeScreen() {
 const getStyles = (isDarkMode: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: isDarkMode ? '#121212' : '#fff' },
-    searchContainer: {
-      padding: 24,
-      paddingTop: 40,
-      paddingBottom: 100,
-      alignItems: 'center',
-    },
+    searchContainer: { padding: 24, paddingTop: 40, paddingBottom: 100, alignItems: 'center' },
     categoryFilterContainer: { marginBottom: 12, paddingHorizontal: 4 },
     categoryButton: {
       marginHorizontal: 6,
@@ -536,13 +495,7 @@ const getStyles = (isDarkMode: boolean) =>
       backgroundColor: isDarkMode ? '#1e1e1e' : '#f9f9f9',
       borderRadius: 6,
     },
-    cardImage: {
-      width: '100%',
-      height: 200,
-      resizeMode: 'contain',
-      borderRadius: 6,
-      marginBottom: 8,
-    },
+    cardImage: { width: '100%', height: 200, resizeMode: 'contain', borderRadius: 6, marginBottom: 8 },
     cardName: { fontSize: 12, fontWeight: '500' },
     iconCircle: {
       position: 'absolute',
@@ -593,4 +546,19 @@ const getStyles = (isDarkMode: boolean) =>
       borderTopColor: isDarkMode ? '#333' : '#ccc',
     },
     iconButton: { padding: 8 },
+    badge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor: '#f00',
+      borderRadius: 8,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
+    },
+    badgeText: {
+      color: '#fff',
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    sumText: { fontSize: 14, fontWeight: '600', color: isDarkMode ? '#fff' : '#000' },
   });

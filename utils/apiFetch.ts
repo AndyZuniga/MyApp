@@ -1,30 +1,34 @@
-// utils/apiFetch.ts
+// MyApp/utils/apiFetch.ts
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = 'https://myappserve-go.onrender.com';
 
-export async function apiFetch(
-  path: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  // 1) Leer token guardado
-  const rawToken = await AsyncStorage.getItem('token');
+/**
+ * apiFetch: igual que fetch(), pero añade automáticamente el header
+ * Authorization: Bearer <token> si existe un token guardado en AsyncStorage.
+ *
+ * @param endpoint - la ruta en el backend, p. ej. '/notifications'
+ * @param options  - las mismas opciones que pasarías a fetch (method, body, etc.)
+ */
+export async function apiFetch(endpoint: string, options: RequestInit = {}) {
+  // 1) Obtenemos el token guardado en AsyncStorage
+  const token = await AsyncStorage.getItem('token');
+
+  // 2) Preparamos encabezados: siempre JSON
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
   };
-  if (rawToken) {
-    headers['Authorization'] = `Bearer ${rawToken}`;
+
+  // 3) Si hay token, lo agregamos
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // 2) Combinar con posibles headers que ya venían en options
-  const mergedHeaders = {
-    ...(options.headers as Record<string, string>),
-    ...headers,
-  };
-
-  // 3) Llamar a fetch sobre la URL base + path
-  return fetch(API_URL + path, {
+  // 4) Ejecutamos la petición real a API
+  return fetch(API_URL + endpoint, {
     ...options,
-    headers: mergedHeaders,
+    headers,
   });
 }

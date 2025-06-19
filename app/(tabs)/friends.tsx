@@ -452,7 +452,9 @@ const getStyles = (dark: boolean) =>
     },
     searchIcon: { marginLeft: 8 },
     loading: { marginTop: 20 },
-    listContainer: { padding: 16 },
+    listContainer: { padding: 16,
+      paddingBottom: 60,
+     },
     userBox: {
       flexDirection: 'row',
       justifyContent: 'space-between',

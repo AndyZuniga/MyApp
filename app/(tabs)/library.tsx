@@ -13,6 +13,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { apiFetch } from '@/utils/apiFetch';
 
 const CARD_CACHE_KEY = 'cardDetailsCache';
 
@@ -63,7 +64,7 @@ export default function LibraryScreen() {
       .catch(() => Alert.alert('Error', 'No se pudo leer usuario'));
   }, []);
 
-  // Cargar sets
+  // Cargar sets (API externa)
   useEffect(() => {
     fetch('https://api.pokemontcg.io/v2/sets')
       .then(res => res.json())
@@ -71,12 +72,12 @@ export default function LibraryScreen() {
       .catch(() => {});
   }, []);
 
-  // Cargar biblioteca y cachear detalles
+  // Cargar biblioteca y cachear detalles (API interna)
   useEffect(() => {
     if (!userObj) return;
     (async () => {
       try {
-        const res = await fetch(`https://myappserve-go.onrender.com/library?userId=${userObj.id}`);
+        const res = await apiFetch(`/library?userId=${userObj.id}`);
         const { library } = await res.json();
         const raw = await AsyncStorage.getItem(CARD_CACHE_KEY);
         const cache = raw ? JSON.parse(raw) : {};
@@ -109,9 +110,8 @@ export default function LibraryScreen() {
     if (!userObj) return Alert.alert('Error', 'Usuario no disponible');
     const ep = action === 'add' ? 'library/add' : 'library/remove';
     try {
-      const res = await fetch(`https://myappserve-go.onrender.com/${ep}`, {
+      const res = await apiFetch(`/${ep}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: userObj.id, cardId }),
       });
       const { library } = await res.json();
@@ -125,6 +125,7 @@ export default function LibraryScreen() {
     }
   };
 
+  // Funciones de filtrado y totales (sin cambios)
   const matchesCategory = (c: any, cat: string) =>
     cat === 'Pokémon'
       ? c.supertype === 'Pokémon'
@@ -132,43 +133,22 @@ export default function LibraryScreen() {
       ? c.supertype === 'Trainer'
       : Array.isArray(c.subtypes) && c.subtypes.includes(cat);
 
-  // Dinámica de filtros encadenados
   const availableCategories = categoryOptions.filter(opt =>
     cards.some(c => matchesCategory(c, opt.value))
   );
-  const filteredByCategory = cards.filter(c =>
-    !selectedCategory || matchesCategory(c, selectedCategory)
-  );
-  const availableSets = sets.filter(s =>
-    filteredByCategory.some(c => c.set?.id === s.id)
-  );
-  const filteredBySet = filteredByCategory.filter(c =>
-    !selectedSet || c.set?.id === selectedSet
-  );
-  const availableTypes = energyTypes.filter(et =>
-    filteredBySet.some(c => Array.isArray(c.types) && c.types.includes(et.type))
-  );
-  const filteredByType = filteredBySet.filter(c =>
-    !selectedType || (Array.isArray(c.types) && c.types.includes(selectedType))
-  );
-  const localFiltered = filteredByType.filter(c =>
-    c.name.toLowerCase().includes(localSearch.toLowerCase())
-  );
+  const filteredByCategory = cards.filter(c => !selectedCategory || matchesCategory(c, selectedCategory));
+  const availableSets = sets.filter(s => filteredByCategory.some(c => c.set?.id === s.id));
+  const filteredBySet = filteredByCategory.filter(c => !selectedSet || c.set?.id === selectedSet);
+  const availableTypes = energyTypes.filter(et => filteredBySet.some(c => Array.isArray(c.types) && c.types.includes(et.type)));
+  const filteredByType = filteredBySet.filter(c => !selectedType || (Array.isArray(c.types) && c.types.includes(selectedType)));
+  const localFiltered = filteredByType.filter(c => c.name.toLowerCase().includes(localSearch.toLowerCase()));
 
-  // Totales globales
-  const totalLow = cards.reduce(
-    (sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * c.quantity,
-    0
-  );
-  const totalTrend = cards.reduce(
-    (sum, c) => sum + (c.cardmarket?.prices?.trendPrice || 0) * c.quantity,
-    0
-  );
+  const totalLow = cards.reduce((sum, c) => sum + (c.cardmarket?.prices?.lowPrice || 0) * c.quantity, 0);
+  const totalTrend = cards.reduce((sum, c) => sum + (c.cardmarket?.prices?.trendPrice || 0) * c.quantity, 0);
   const sumText = showLowSum
     ? `Total Low: $${totalLow.toFixed(2)}`
     : `Total Trend: $${totalTrend.toFixed(2)}`;
 
-  // Navegación y menú
   const goHome = () => router.replace('/home');
   const showHelp = () =>
     Alert.alert('Ayuda', 'Aquí puedes ver tu biblioteca. Usa + / - para ajustar.');

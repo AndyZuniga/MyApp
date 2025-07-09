@@ -1,5 +1,5 @@
 // home.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,37 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { io } from 'socket.io-client';
-import { apiFetch } from '../../utils/apiFetch'; 
+import { apiFetch } from '../../utils/apiFetch';
+
+
+function getFilteredCards(cards, {
+  searchTerm,
+  selectedSet,
+  selectedCategory,
+  selectedType,
+}) {
+  return cards.filter(card => {
+    // Filtro por nombre
+    if (searchTerm.trim()) {
+      const name = searchTerm.trim().toLowerCase();
+      if (!card.name.toLowerCase().includes(name)) return false;
+    }
+    // Filtro por set
+    if (selectedSet && card.set?.id !== selectedSet) return false;
+    // Filtro por categoría
+    if (selectedCategory) {
+      if (selectedCategory === 'Trainer' && card.supertype !== 'Trainer') return false;
+      if (
+        selectedCategory !== 'Trainer' &&
+        !(Array.isArray(card.subtypes) && card.subtypes.includes(selectedCategory))
+      ) return false;
+    }
+    // Filtro por tipo
+    if (selectedType && !(Array.isArray(card.types) && card.types.includes(selectedType))) return false;
+    return true;
+  });
+}
+
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -208,17 +238,16 @@ useEffect(() => {
     ? energyTypes
     : energyTypes.filter(et => cards.some(c => Array.isArray(c.types) && c.types.includes(et.type)));
 
-  const filteredCards = cards
-    .filter(c =>
-      !selectedCategory
-        ? true
-        : selectedCategory === 'Trainer'
-        ? c.supertype === 'Trainer'
-        : Array.isArray(c.subtypes) && c.subtypes.includes(selectedCategory)
-    )
-    .filter(c => (!selectedSet ? true : c.set?.id === selectedSet))
-    .filter(c => (!selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)));
-
+const filteredCards = useMemo(
+  () =>
+    getFilteredCards(cards, {
+      searchTerm,
+      selectedSet,
+      selectedCategory,
+      selectedType,
+    }),
+  [cards, searchTerm, selectedSet, selectedCategory, selectedType]
+);
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">

@@ -1,310 +1,564 @@
-import React, { useEffect, useState } from 'react';
+// home.tsx
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
+  TextInput,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
+  useColorScheme,
   Alert,
-  ActivityIndicator
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '@/utils/apiFetch';
 import { useRouter } from 'expo-router';
 import { io } from 'socket.io-client';
+import { apiFetch } from '../../utils/apiFetch'; 
 
-export type Task = {
-  id: string;
-  title: string;
-  dueDate: string;
-  assigneeName: string;
-  assigneeId?: string;
-  createdBy: string;
-  status: 'no_realizada' | 'incompleta' | 'completada';
-};
-
-type Filter = 'all' | 'today' | 'upcoming' | 'completed';
-
-const filterLabels: Record<Filter, string> = {
-  all: 'Todas',
-  today: 'Hoy',
-  upcoming: 'Próximas',
-  completed: 'Completadas',
-};
-
-const statusLabels: Record<Task['status'], string> = {
-  no_realizada: 'No realizada',
-  incompleta: 'Incompleta',
-  completada: 'Completada',
-};
-
-const Home: React.FC = () => {
+export default function HomeScreen() {
   const router = useRouter();
   const [userObj, setUserObj] = useState<any>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const [socket, setSocket] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
 
+  // Recupera usuario y token de AsyncStorage
+// Aúltima versión de home.tsx que te compartí incluye:
+
+useEffect(() => {
+  const loadSession = async () => {
+    const rawUser = await AsyncStorage.getItem('user');
+    const rawToken = await AsyncStorage.getItem('token');
+    if (rawUser) setUserObj(JSON.parse(rawUser));
+    if (rawToken) setToken(rawToken);
+  };
+  loadSession();
+}, []);
+
+
+  const isDarkMode = useColorScheme() === 'dark';
+  const styles = getStyles(isDarkMode);
+
+  // Estados de búsqueda y filtros
+  const [searchTerm, setSearchTerm] = useState('');
+  const [cards, setCards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedSet, setSelectedSet] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+
+  // Badge contador de notificaciones no leídas
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Opciones de categoría
+  const categoryOptions = [
+    { label: 'Objeto', value: 'Item' },
+    { label: 'Entrenador', value: 'Trainer' },
+    { label: 'Herramienta', value: 'Pokémon Tool' },
+    { label: 'Estadio', value: 'Stadium' },
+  ];
+
+  // Carga de sets desde API pública
+  const [sets, setSets] = useState<any[]>([]);
   useEffect(() => {
-    AsyncStorage.getItem('user')
-      .then(raw => {
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const userWithId = {
-        ...parsed,
-        _id: parsed._id || parsed.id // garantiza que tenga ._id
-      };
-      setUserObj(userWithId);
-    }
-  })
-  .catch(err => console.error('[AsyncStorage user]', err));
-
-    fetchTasks();
-
-    const newSocket = io('https://myappserve-go.onrender.com');
-    setSocket(newSocket);
-    return () => newSocket.disconnect();
+    (async () => {
+      try {
+        const resp = await fetch('https://api.pokemontcg.io/v2/sets');
+        const json = await resp.json();
+        setSets(json.data || []);
+      } catch (e) {
+        console.error('Error al cargar sets:', e);
+      }
+    })();
   }, []);
 
-  useEffect(() => {
-    if (!socket) return;
-    socket.on('newTask', (task: any) => {
-      const newTask: Task = {
-        id: task._id,
-        title: task.title,
-        dueDate: task.dueDate,
-        assigneeName: task.assignee ? `${task.assignee.nombre} ${task.assignee.apellido}` : 'Sin asignar',
-        assigneeId: typeof task.assignee === 'object' ? task.assignee._id : task.assignee,
-        createdBy: task.createdBy,
-        status: task.status || 'no_realizada',
-      };
-      setTasks(prev => [newTask, ...prev]);
-    });
-    socket.on('taskUpdated', (task: any) => {
-      const updatedTask: Task = {
-        id: task._id,
-        title: task.title,
-        dueDate: task.dueDate,
-        assigneeName: task.assignee ? `${task.assignee.nombre} ${task.assignee.apellido}` : 'Sin asignar',
-        assigneeId: typeof task.assignee === 'object' ? task.assignee._id : task.assignee,
-        createdBy: task.createdBy,
-        status: task.status || 'no_realizada',
-      };
-      setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
-    });
-    socket.on('taskDeleted', ({ id }: { id: string }) => {
-      setTasks(prev => prev.filter(t => t.id !== id));
-    });
-    socket.on('statusUpdated', (task: any) => {
-      setTasks(prev => prev.map(t => t.id === task._id ? { ...t, status: task.status } : t));
-    });
-  }, [socket]);
+  // Definición estática de tipos de energía
+  const energyTypes = [
+    { type: 'Water', icon: require('@/assets/images/energies/Energía_agua.png') },
+    { type: 'Fire', icon: require('@/assets/images/energies/Energía_fuego.png') },
+    { type: 'Fairy', icon: require('@/assets/images/energies/Energía_hada.png') },
+    { type: 'Colorless', icon: require('@/assets/images/energies/Energía_incolora.png') },
+    { type: 'Fighting', icon: require('@/assets/images/energies/Energía_lucha.png') },
+    { type: 'Metal', icon: require('@/assets/images/energies/Energía_metálica.png') },
+    { type: 'Darkness', icon: require('@/assets/images/energies/Energía_oscura.png') },
+    { type: 'Grass', icon: require('@/assets/images/energies/Energía_planta.png') },
+    { type: 'Psychic', icon: require('@/assets/images/energies/Energía_psíquica.png') },
+    { type: 'Lightning', icon: require('@/assets/images/energies/Energía_rayo.png') },
+  ];
 
-  const fetchTasks = async () => {
+  // Carga biblioteca para contador
+  const [library, setLibrary] = useState<{ cardId: string; quantity: number }[]>([]);
+  useEffect(() => {
+    if (!userObj) return;
+    apiFetch(`/library?userId=${userObj.id}`, {
+      method: 'GET',
+    })
+      .then(r => r.json())
+      .then(data => setLibrary(data.library))
+      .catch(console.error);
+  }, [userObj]);
+
+  // Función para obtener la cantidad de notificaciones no leídas
+  const fetchUnreadCount = useCallback(async () => {
+    if (!userObj) return;
+    try {
+      const res = await apiFetch(
+        `/notifications?userId=${userObj.id}&isRead=false`,
+        { method: 'GET' }
+      );
+      if (!res.ok) throw new Error('Error al obtener notificaciones');
+      const data = await res.json();
+      setUnreadCount(Array.isArray(data.notifications) ? data.notifications.length : 0);
+    } catch (err) {
+      console.error('fetchUnreadCount:', err);
+    }
+  }, [userObj]);
+
+  // Conectar WebSocket y suscribirse a notificaciones en tiempo real
+  useEffect(() => {
+    if (!userObj?.id || !token) return;
+
+    const socket = io('https://myappserve-go.onrender.com', {
+      auth: { token },
+      transports: ['websocket'],
+    });
+
+    socket.emit('registerUser', userObj.id);
+
+    socket.on('newNotification', () => {
+      fetchUnreadCount();
+    });
+
+    // Inicialmente obtener el conteo
+    fetchUnreadCount();
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [userObj, token, fetchUnreadCount]);
+
+  // Función de búsqueda por nombre
+  const buscarCarta = async () => {
+    const raw = searchTerm.trim();
+    if (!raw) {
+      // Si el término está vacío, restablece estados relacionados
+      setSelectedCategory(null);
+      setSelectedSet(null);
+      setSelectedType(null);
+      setCards([]);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await apiFetch('/tasks');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { tasks: serverTasks } = await res.json();
-      setTasks(serverTasks.map((t: any) => ({
-        id: t._id,
-        title: t.title,
-        dueDate: t.dueDate,
-        assigneeName: typeof t.assignee === 'object' && t.assignee !== null
-          ? `${t.assignee.nombre} ${t.assignee.apellido}`
-          : 'Sin asignar',
-        assigneeId: typeof t.assignee === 'object' && t.assignee !== null
-          ? t.assignee._id?.toString()
-          : t.assignee?.toString(),
-        createdBy: t.createdBy,
-        status: t.status || 'no_realizada',
-      })));
-    } catch (error) {
-      console.error('Error fetching tasks:', error);
-      Alert.alert('Error', 'No se pudieron cargar las tareas');
+      const withSpaces = raw;
+      const withHyphens = raw.replace(/\s+/g, '-');
+      const noSpaces = raw.replace(/\s+/g, '');
+      const query = `name:"${withSpaces}" OR name:"${withHyphens}" OR name:"${noSpaces}"`;
+      const q = encodeURIComponent(query);
+      const resp = await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}`);
+      const json = await resp.json();
+      setCards(json.data || []);
+      // Cuando se busca por nombre, reiniciar filtros de set y tipo
+      setSelectedSet(null);
+      setSelectedType(null);
+      setSelectedCategory(null);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo obtener las cartas.');
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  const updateStatus = async (id: string, status: Task['status']) => {
-    try {
-      const res = await apiFetch(`/tasks/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setExpandedTaskId(null);
-    } catch (error) {
-      console.error('Error updating status:', error);
-      Alert.alert('Error', 'No se pudo actualizar el estado');
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Nuevo useEffect: si se selecciona un set y NO hay término de búsqueda,
+  // descargar todas las cartas de ese set.
+  useEffect(() => {
+    const raw = searchTerm.trim();
+    if (selectedSet && !raw) {
+      setLoading(true);
+      // Query para obtener todas las cartas cuyo set.id coincida
+      const qSet = encodeURIComponent(`set.id:"${selectedSet}"`);
+      fetch(`https://api.pokemontcg.io/v2/cards?q=${qSet}`)
+        .then(res => res.json())
+        .then(json => {
+          setCards(json.data || []);
+          // Restablecer filtros de categoría y tipo al seleccionar un set
+          setSelectedCategory(null);
+          setSelectedType(null);
+        })
+        .catch(e => {
+          Alert.alert('Error', 'No se pudo obtener las cartas del set seleccionado.');
+          console.error(e);
+        })
+        .finally(() => setLoading(false));
+    } else if (!selectedSet && !raw) {
+      // Si se deselecciona el set y no hay búsqueda, limpiar lista de cartas
+      setCards([]);
     }
-  };
+  }, [selectedSet, searchTerm]);
+  // ─────────────────────────────────────────────────────────────────────────────
 
-  const toggleExpand = (id: string) => {
-    setExpandedTaskId(prev => (prev === id ? null : id));
-  };
+  // Lógica filtros dinámicos
+  const availableSets = !searchTerm.trim()
+    ? sets
+    : sets.filter(s => cards.some(c => c.set?.id === s.id));
 
-  const filteredTasks = tasks.filter(t => {
-    const today = new Date();
-    const due = new Date(t.dueDate);
-    const isSameDay = due.toDateString() === today.toDateString();
-    if (filter === 'today') return isSameDay;
-    if (filter === 'upcoming') return due > today;
-    if (filter === 'completed') return t.status === 'completada';
-    return true;
-  });
+  const availableTypes = !searchTerm.trim()
+    ? energyTypes
+    : energyTypes.filter(et => cards.some(c => Array.isArray(c.types) && c.types.includes(et.type)));
 
-  const renderItem = ({ item }: { item: Task }) => {
-    console.log('TASK ID:', item.id);
-    console.log('assigneeId:', item.assigneeId);
-    console.log('userObj._id:', userObj?._id);
-    console.log('es encargado:', item.assigneeId?.toString() === userObj?._id?.toString());
-
-
-    const isAssignee = userObj && item.assigneeId?.toString() === userObj._id?.toString();
-    const expanded = item.id === expandedTaskId;
-    return (
-      <View>
-        <TouchableOpacity
-          style={styles.taskItem}
-          onPress={() => toggleExpand(item.id)}
-        >
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.assignee}>Encargado: {item.assigneeName}</Text>
-          <Text style={styles.date}>{new Date(item.dueDate).toLocaleDateString()}</Text>
-        </TouchableOpacity>
-        {expanded && (
-          <View style={styles.expandContainer}>
-            <Text style={styles.statusText}>Estado: {statusLabels[item.status]}</Text>
-            {isAssignee && (
-              <View style={styles.statusButtonsRow}>
-                {(['no_realizada','incompleta','completada'] as Task['status'][]).map(s => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[
-                      styles.statusButton,
-                      item.status === s && styles.statusButtonActive
-                    ]}
-                    onPress={() => updateStatus(item.id, s)}
-                  >
-                    <Text
-                      style={[
-                        styles.statusButtonText,
-                        item.status === s && styles.statusButtonTextActive
-                      ]}
-                    >
-                      {statusLabels[s]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-      </View>
-    );
-  };
+  const filteredCards = cards
+    .filter(c =>
+      !selectedCategory
+        ? true
+        : selectedCategory === 'Trainer'
+        ? c.supertype === 'Trainer'
+        : Array.isArray(c.subtypes) && c.subtypes.includes(selectedCategory)
+    )
+    .filter(c => (!selectedSet ? true : c.set?.id === selectedSet))
+    .filter(c => (!selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)));
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>Mis Tareas</Text>
-        <TouchableOpacity onPress={() => {
-          if (!userObj) return;
-          Alert.alert(
-            `${userObj.nombre} ${userObj.apellido}`,
-            `Apodo: ${userObj.apodo}\nCorreo: ${userObj.correo}`,
-            [
-              { text: 'Cerrar sesión', style: 'destructive', onPress: async () => {
-                await AsyncStorage.removeItem('user');
-                router.replace('/login');
-              }},
-              { text: 'Cancelar', style: 'cancel' }
-            ]
-          );
-        }}>
-          <Ionicons name="person-circle-outline" size={32} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
+      <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
+        {/* Filtro Categoría */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryFilterContainer}
+          nestedScrollEnabled
+        >
+          {categoryOptions.map(opt => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.categoryButton, selectedCategory === opt.value && styles.categoryButtonSelected]}
+              onPress={() => setSelectedCategory(prev => (prev === opt.value ? null : opt.value))}
+            >
+              <Text style={[styles.categoryLabel, { color: isDarkMode ? '#fff' : '#000' }]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-      <View style={styles.filterRow}>
-        {Object.entries(filterLabels).map(([key, label]) => (
-          <TouchableOpacity
-            key={key}
-            onPress={() => setFilter(key as Filter)}
-            style={[
-              styles.filterBtn,
-              filter === key && styles.filterBtnActive
-            ]}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === key && styles.filterTextActive
-              ]}
-            >{label}</Text>
+        {/* Filtro Sets */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.setFilterContainer}
+          nestedScrollEnabled
+        >
+          {availableSets.map(set => (
+            <TouchableOpacity
+              key={set.id}
+              style={[styles.setButton, selectedSet === set.id && styles.setButtonSelected]}
+              onPress={() => {
+                // Alternar selección de set
+                setSelectedSet(prev => (prev === set.id ? null : set.id));
+                // Borrar término de búsqueda si se elige set
+                setSearchTerm('');
+              }}
+            >
+              <Image source={{ uri: set.images.logo }} style={styles.setIcon} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Filtro Tipos */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.typeFilterContainer}
+          nestedScrollEnabled
+        >
+          {availableTypes.map(({ type, icon }) => (
+            <TouchableOpacity
+              key={type}
+              style={[styles.typeButton, selectedType === type && styles.typeButtonSelected]}
+              onPress={() => setSelectedType(prev => (prev === type ? null : type))}
+            >
+              <Image source={icon} style={styles.typeIcon} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Barra de búsqueda */}
+        <View style={styles.searchLocalContainer}>
+          <TextInput
+            style={styles.inputLocal}
+            placeholder="Buscar en mi biblioteca"
+            placeholderTextColor={isDarkMode ? '#aaa' : '#999'}
+            value={searchTerm}
+            onChangeText={text => {
+              // Al cambiar el término, limpiar selección de set
+              setSearchTerm(text);
+              if (text.trim()) {
+                setSelectedSet(null);
+              }
+            }}
+            returnKeyType="search"
+            onSubmitEditing={buscarCarta}
+          />
+          <TouchableOpacity onPress={buscarCarta} style={styles.searchIconButton}>
+            <Ionicons name="search-outline" size={24} color={isDarkMode ? '#fff' : '#000'} />
           </TouchableOpacity>
-        ))}
-      </View>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={filteredTasks}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={filteredTasks.length === 0 && styles.emptyContainer}
-          ListEmptyComponent={<Text style={styles.emptyText}>No hay tareas</Text>}
-          refreshing={loading}
-          onRefresh={fetchTasks}
-        />
-      )}
+        {/* Mostrar cartas filtradas */}
+        {filteredCards.map(card => {
+          const qty = library.find(e => e.cardId === card.id)?.quantity || 0;
+          return (
+            <View key={card.id} style={styles.cardBox}>
+              {qty > 0 && (
+                <View style={styles.counterBadge}>
+                  <Text style={styles.counterText}>{qty}</Text>
+                </View>
+              )}
+              {/* Botón para remover carta */}
+              <TouchableOpacity
+                style={styles.iconCircleLeft}
+                onPress={async () => {
+                  try {
+                    const res = await apiFetch('/library/remove', {
+                      method: 'POST',
+                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error);
+                    setLibrary(data.library);
+                  } catch (e: any) {
+                    Alert.alert('Error', e.message);
+                  }
+                }}
+              >
+                <Ionicons name="remove" size={16} color="#fff" />
+              </TouchableOpacity>
 
+              {/* Botón para agregar carta */}
+              <TouchableOpacity
+                style={styles.iconCircle}
+                onPress={async () => {
+                  try {
+                    const res = await apiFetch('/library/add', {
+                      method: 'POST',
+                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error);
+                    setLibrary(data.library);
+                    Alert.alert(
+                      'Añadido',
+                      `Ahora tienes ${data.library.find((e: any) => e.cardId === card.id).quantity} de esta carta.`
+                    );
+                  } catch (e: any) {
+                    Alert.alert('Error', e.message);
+                  }
+                }}
+              >
+                <Ionicons name="add" size={16} color="#fff" />
+              </TouchableOpacity>
+
+              <Image source={{ uri: card.images.small }} style={styles.cardImage} />
+              <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
+                {card.name}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* Barra inferior */}
       <View style={styles.bottomBar}>
-        <View style={{ width: 32 }} />
-        <TouchableOpacity onPress={() => router.push('/task-form')} style={styles.addButton}>
-          <Ionicons name="add-circle-outline" size={56} color="#007AFF" />
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => {
+            if (!userObj) return Alert.alert('Usuario no disponible');
+            const usuarioParam = encodeURIComponent(JSON.stringify(userObj));
+            router.push({ pathname: '/library', params: { usuario: usuarioParam } });
+          }}
+        >
+          <Ionicons name="book" size={28} color={isDarkMode ? '#fff' : '#000'} />
         </TouchableOpacity>
-        <View style={{ width: 32 }} />
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/friends')}>
+          <Ionicons name="people-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
+
+        {/* Ícono de notificaciones con badge */}
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={async () => {
+            const raw = await AsyncStorage.getItem('user');
+            const storedUser = raw ? JSON.parse(raw) : null;
+            if (storedUser) {
+              router.push(`/notifications?userId=${storedUser.id}`);
+            } else {
+              Alert.alert('Error', 'No se pudo recuperar el usuario');
+            }
+          }}
+        >
+          <View>
+            <Ionicons name="notifications-outline" size={28} color={isDarkMode ? '#fff' : '#000'} />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => {
+            Alert.alert('Opciones', undefined, [
+              {
+                text: 'Mis datos',
+                onPress: () =>
+                  userObj &&
+                  Alert.alert(
+                    'Datos de usuario',
+                    `${userObj.nombre} ${userObj.apellido}\nApdodo: ${userObj.apodo}\nCorreo: ${userObj.correo}`
+                  ),
+              },
+              {
+                text: 'Cerrar Sesión',
+                style: 'destructive',
+                onPress: async () => {
+                  await AsyncStorage.removeItem('user');
+                  await AsyncStorage.removeItem('token');
+                  router.replace('/login');
+                },
+              },
+              { text: 'Cancelar', style: 'cancel' },
+            ]);
+          }}
+        >
+          <Ionicons name="person" size={28} color={isDarkMode ? '#fff' : '#000'} />
+        </TouchableOpacity>
       </View>
     </View>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  container:      { flex: 1, padding: 16, paddingBottom: 80, backgroundColor: '#fff' },
-  header:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  heading:        { fontSize: 24, fontWeight: 'bold' },
-  filterRow:      { flexDirection: 'row', justifyContent: 'space-around', marginTop: 12 },
-  filterBtn:      { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
-  filterBtnActive:{ backgroundColor: '#007AFF' },
-  filterText:     { fontSize: 14, color: '#007AFF' },
-  filterTextActive:{ color: '#fff' },
-  taskItem:       { padding: 12, borderBottomWidth: 1, borderColor: '#eee' },
-  title:          { fontSize: 16 },
-  assignee:       { fontSize: 12, color: '#555', marginTop: 4 },
-  date:           { fontSize: 12, color: '#666', marginTop: 2 },
-  expandContainer:{ padding: 12, backgroundColor: '#f9f9f9' },
-  statusText:     { fontSize: 12, color: '#007AFF', marginBottom: 8 },
-  statusButtonsRow:{ flexDirection: 'row', justifyContent: 'space-around' },
-  statusButton:    { paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: '#007AFF', borderRadius: 4 },
-  statusButtonActive:{ backgroundColor: '#007AFF' },
-  statusButtonText:{ fontSize: 12, color: '#007AFF' },
-  statusButtonTextActive:{ color: '#fff' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText:      { fontSize: 16, color: '#999' },
-  bottomBar:      {
-    position: 'absolute', bottom: 0, width: '100%', height: 72,
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#ccc'
-  },
-  addButton:      { marginTop: -28, alignItems: 'center', justifyContent: 'center' }
-});
-
-export default Home;
+const getStyles = (isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: isDarkMode ? '#121212' : '#fff' },
+    searchContainer: { padding: 24, paddingTop: 40, paddingBottom: 100, alignItems: 'center' },
+    categoryFilterContainer: { marginBottom: 12, paddingHorizontal: 4 },
+    categoryButton: {
+      marginHorizontal: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0',
+    },
+    categoryButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    categoryLabel: { fontSize: 14, fontWeight: '500' },
+    setFilterContainer: { marginBottom: 12, paddingHorizontal: 4 },
+    setButton: {
+      marginHorizontal: 6,
+      padding: 4,
+      borderRadius: 6,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    setButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    setIcon: { width: 40, height: 40, resizeMode: 'contain' },
+    typeFilterContainer: { marginBottom: 16, paddingHorizontal: 4 },
+    typeButton: {
+      alignItems: 'center',
+      marginHorizontal: 8,
+      padding: 4,
+      borderRadius: 6,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0',
+    },
+    typeButtonSelected: { borderWidth: 2, borderColor: '#6A0DAD' },
+    typeIcon: { width: 25, height: 25, resizeMode: 'contain' },
+    searchLocalContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 8,
+      marginBottom: 16,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#f0f0f0',
+      borderRadius: 6,
+      width: '100%',
+      paddingHorizontal: 12,
+    },
+    inputLocal: { flex: 1, height: 40, color: isDarkMode ? '#fff' : '#000' },
+    searchIconButton: { marginLeft: 8 },
+    cardBox: {
+      width: '100%',
+      alignItems: 'center',
+      padding: 12,
+      marginBottom: 16,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#f9f9f9',
+      borderRadius: 6,
+    },
+    cardImage: { width: '100%', height: 200, resizeMode: 'contain', borderRadius: 6, marginBottom: 8 },
+    cardName: { fontSize: 12, fontWeight: '500' },
+    iconCircle: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: '#6A0DAD',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1,
+    },
+    iconCircleLeft: {
+      position: 'absolute',
+      top: 8,
+      left: 8,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: '#6A0DAD',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1,
+    },
+    counterBadge: {
+      position: 'absolute',
+      top: 8,
+      right: 48,
+      backgroundColor: '#6A0DAD',
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      zIndex: 1,
+    },
+    counterText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+    bottomBar: {
+      position: 'absolute',
+      bottom: 0,
+      width: '100%',
+      height: 60,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      backgroundColor: isDarkMode ? '#1e1e1e' : '#fff',
+      borderTopWidth: 1,
+      borderTopColor: isDarkMode ? '#333' : '#ccc',
+    },
+    iconButton: { padding: 8 },
+    badge: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor: '#f00',
+      borderRadius: 8,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
+    },
+    badgeText: {
+      color: '#fff',
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    sumText: { fontSize: 14, fontWeight: '600', color: isDarkMode ? '#fff' : '#000' },
+  });

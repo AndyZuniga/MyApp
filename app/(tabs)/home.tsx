@@ -364,29 +364,26 @@ const filteredCards = useMemo(
                 <Ionicons name="remove" size={16} color="#fff" />
               </TouchableOpacity>
 
-              {/* Botón para agregar carta */}
-              <TouchableOpacity
-                style={styles.iconCircle}
-                onPress={async () => {
-                  try {
-                    const res = await apiFetch('/library/add', {
-                      method: 'POST',
-                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error);
-                    setLibrary(data.library);
-                    Alert.alert(
-                      'Añadido',
-                      `Ahora tienes ${data.library.find((e: any) => e.cardId === card.id).quantity} de esta carta.`
-                    );
-                  } catch (e: any) {
-                    Alert.alert('Error', e.message);
-                  }
-                }}
-              >
-                <Ionicons name="add" size={16} color="#fff" />
-              </TouchableOpacity>
+<TouchableOpacity
+  style={styles.iconCircle}
+  onPress={async () => {
+    try {
+      const res = await apiFetch('/library/add', {
+        method: 'POST',
+        body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLibrary(data.library);
+      // No mostrar alerta en caso de éxito
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }}
+>
+  <Ionicons name="add" size={16} color="#fff" />
+</TouchableOpacity>
+
 
               <Image source={{ uri: card.images.small }} style={styles.cardImage} />
               <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>

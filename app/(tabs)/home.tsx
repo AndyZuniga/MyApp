@@ -587,4 +587,12 @@ const getStyles = (isDarkMode: boolean) =>
       fontWeight: '600',
     },
     sumText: { fontSize: 14, fontWeight: '600', color: isDarkMode ? '#fff' : '#000' },
+        leagueLogo: {
+      position: 'absolute',
+      bottom: 16,
+      right: 16,
+      width: 30,
+      aspectRatio: 1,
+      zIndex: 10,
+    },
   });

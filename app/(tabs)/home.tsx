@@ -1,5 +1,5 @@
 // home.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,37 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { io } from 'socket.io-client';
-import { apiFetch } from '../../utils/apiFetch'; 
+import { apiFetch } from '../../utils/apiFetch';
+
+
+function getFilteredCards(cards, {
+  searchTerm,
+  selectedSet,
+  selectedCategory,
+  selectedType,
+}) {
+  return cards.filter(card => {
+    // Filtro por nombre
+    if (searchTerm.trim()) {
+      const name = searchTerm.trim().toLowerCase();
+      if (!card.name.toLowerCase().includes(name)) return false;
+    }
+    // Filtro por set
+    if (selectedSet && card.set?.id !== selectedSet) return false;
+    // Filtro por categoría
+    if (selectedCategory) {
+      if (selectedCategory === 'Trainer' && card.supertype !== 'Trainer') return false;
+      if (
+        selectedCategory !== 'Trainer' &&
+        !(Array.isArray(card.subtypes) && card.subtypes.includes(selectedCategory))
+      ) return false;
+    }
+    // Filtro por tipo
+    if (selectedType && !(Array.isArray(card.types) && card.types.includes(selectedType))) return false;
+    return true;
+  });
+}
+
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -208,17 +238,16 @@ useEffect(() => {
     ? energyTypes
     : energyTypes.filter(et => cards.some(c => Array.isArray(c.types) && c.types.includes(et.type)));
 
-  const filteredCards = cards
-    .filter(c =>
-      !selectedCategory
-        ? true
-        : selectedCategory === 'Trainer'
-        ? c.supertype === 'Trainer'
-        : Array.isArray(c.subtypes) && c.subtypes.includes(selectedCategory)
-    )
-    .filter(c => (!selectedSet ? true : c.set?.id === selectedSet))
-    .filter(c => (!selectedType ? true : Array.isArray(c.types) && c.types.includes(selectedType)));
-
+const filteredCards = useMemo(
+  () =>
+    getFilteredCards(cards, {
+      searchTerm,
+      selectedSet,
+      selectedCategory,
+      selectedType,
+    }),
+  [cards, searchTerm, selectedSet, selectedCategory, selectedType]
+);
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
@@ -335,29 +364,26 @@ useEffect(() => {
                 <Ionicons name="remove" size={16} color="#fff" />
               </TouchableOpacity>
 
-              {/* Botón para agregar carta */}
-              <TouchableOpacity
-                style={styles.iconCircle}
-                onPress={async () => {
-                  try {
-                    const res = await apiFetch('/library/add', {
-                      method: 'POST',
-                      body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error);
-                    setLibrary(data.library);
-                    Alert.alert(
-                      'Añadido',
-                      `Ahora tienes ${data.library.find((e: any) => e.cardId === card.id).quantity} de esta carta.`
-                    );
-                  } catch (e: any) {
-                    Alert.alert('Error', e.message);
-                  }
-                }}
-              >
-                <Ionicons name="add" size={16} color="#fff" />
-              </TouchableOpacity>
+<TouchableOpacity
+  style={styles.iconCircle}
+  onPress={async () => {
+    try {
+      const res = await apiFetch('/library/add', {
+        method: 'POST',
+        body: JSON.stringify({ userId: userObj.id, cardId: card.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setLibrary(data.library);
+      // No mostrar alerta en caso de éxito
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }}
+>
+  <Ionicons name="add" size={16} color="#fff" />
+</TouchableOpacity>
+
 
               <Image source={{ uri: card.images.small }} style={styles.cardImage} />
               <Text style={[styles.cardName, { color: isDarkMode ? '#fff' : '#000' }]}>
@@ -561,4 +587,12 @@ const getStyles = (isDarkMode: boolean) =>
       fontWeight: '600',
     },
     sumText: { fontSize: 14, fontWeight: '600', color: isDarkMode ? '#fff' : '#000' },
+        leagueLogo: {
+      position: 'absolute',
+      bottom: 16,
+      right: 16,
+      width: 30,
+      aspectRatio: 1,
+      zIndex: 10,
+    },
   });

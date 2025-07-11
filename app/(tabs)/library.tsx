@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   Alert,
   Image,
   TextInput,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { apiFetch } from '@/utils/apiFetch';
-
+const leagueLogo = require('@/assets/images/letterformats/formato-liga.png');
 const CARD_CACHE_KEY = 'cardDetailsCache';
 
 export default function LibraryScreen() {
@@ -159,6 +161,30 @@ export default function LibraryScreen() {
       { text: 'Cancelar', style: 'cancel' },
     ]);
 
+
+    const DraggableLogo = () => {
+    const pan = useRef(new Animated.ValueXY()).current;
+    const panResponder = useRef(
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderMove: Animated.event(
+          [null, { dx: pan.x, dy: pan.y }],
+          { useNativeDriver: false }
+        ),
+        onPanResponderRelease: () => {},
+      })
+    ).current;
+
+    return (
+      <Animated.Image
+        source={leagueLogo}
+        style={[styles.leagueLogo, { transform: pan.getTranslateTransform() }]}
+        resizeMode="contain"
+        {...panResponder.panHandlers}
+      />
+    );
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.searchContainer} keyboardShouldPersistTaps="handled">
@@ -279,4 +305,5 @@ const getStyles = (isDarkMode: boolean) => StyleSheet.create({
   homeIcon: { width: 28, height: 28, tintColor: isDarkMode ? '#fff' : '#000' },
   sumText: { fontSize: 14, fontWeight: '600', color: isDarkMode ? '#fff' : '#000' },
   homeIcon: { width: 28, height: 28, tintColor: isDarkMode ? '#fff' : '#000' },
+  leagueLogo: { position: 'absolute', bottom: 16, right: 16, width: 30, aspectRatio: 1, opacity: 0.7, zIndex: 10, },
 });
